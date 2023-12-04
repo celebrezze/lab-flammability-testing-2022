@@ -1,0 +1,174 @@
+---
+title: "Metadata"
+author: "Joe Celebrezze"
+date: "2023-06-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(tidyverse)
+```
+
+# Raw Data
+To be filled in later...
+
+# Processed Data
+## main_dataset.csv
+This dataset is intended to be the primary dataset used in data analyses
+```{r}
+main_df <- read.csv(here('data', 'processed-data', 'main_dataset.csv'))
+summary(main_df)
+```
+
+**species**: 6-letter species code w/ first three letters of genus name followed by first three letters of specific epiphet (exception: "MANDEN" which uses common name, 'Manzanita', as first three letters of code); see below for what species each code represents
+    *Iris douglasiana* ~ "IRIDOU",
+    *Erigeron karvinskianus* ~ "ERIKAR",
+    *Salvia apiana* ~ "SALAPI",
+    *Salvia leucophylla* ~ "SALLEU",
+    *Artemesia californica* ~ "ARTCAL",
+    *Ceanothus griseus* ~ "CEAGRI",
+    *Malosma laurina* ~ "MALLAU",
+    *Heteromeles arbutifolia* ~ "HETARB"
+    *Arctostaphylos densiflora* ~ "MANDEN"
+    
+**plant**: numerical variable indicating which plant the sample came from (typically in between 1-12)
+
+**date**: date, in format YYYY-MM-DD
+
+**total_branch_mass**: total mass (g) of the branch used for each plant when calculating stem-to-leaf ratio
+
+**total_leaf_mass**: total mass (g) of the leaves used for each plant when calculating stem-to-leaf ratio
+
+**stem_mass_ratio**: % of total mass (leaves and stem) that is taken up by stem (one value per plant)
+
+**leaf_mass_ratio**: % of total mass (leaves and stem) that is taken up by leaves (one value per plant)
+  
+**leaf_lfm**: live fuel moisture (%) of the leaves (one value per plant)
+
+**thickness**: average leaf thickness (units?) as measured by calipers (one value per plant)
+
+**leaf_wet_mass**: wet mass (g) of the leaves used in live fuel moisture measurement (typically five leaves, w/ ERIKAR and ARTCAL providing exceptions due to their very small leaves) (one value per plant)
+
+**leaf_dry_mass**: dry mass (g) of the leaves used in live fuel moisture measurement (typically five leaves, w/ ERIKAR and ARTCAL providing exceptions due to their very small leaves) (one value per plant)
+
+**stem_lfm**: live fuel moisture (%) of the stem (one value per plant)
+
+**stem_width**: average width of the stem (units?); intended as a proxy for woodineess (? **confirm**) (one value per plant)
+
+**stem_wet_mass**: wet mass (g) of the stem used in live fuel moisture measurement (one value per plant)
+
+**stem_dry_mass**: dry mass (g) of the stem used in live fuel moisture measurement (one value per plant)
+
+**lfm**: live fuel moisture of the plant (%, leaves and stem included) (one value per plant)
+
+**leaf_area**: average area of five leaves measured by using ImageJ and leaf scans; used in the calculations of LMA and SLA below
+
+**auc_voc**: area under the curve for the plot of VOC's over time; intended as a proxy for VOC emmissions (*one value per species*)
+
+**avg_voc**: average concentration of VOC's as detected by the VOC meter utilized by Jackie Liang (VOCs/second) (one value per plant) (*one value per species*)
+
+**LMA**: leaf mass per area (g/cm^2) (note: NAs for ERIKAR and ARTCAL due to those species not having the correct data to be able to calculate LMA) (one value per plant)
+
+**SLA**: specific leaf area (cm^2/g) (note: NAs for ERIKAR and ARTCAL for same reason as above) (one value per plant)
+
+**rep**: numerical indicator of the sample used in the flammability test; typically, each plant was burned multiple times
+
+**branch_length**: length (cm) of the sample loaded into the flammability chamber
+
+**branch_width**: width (cm) of the sample loaded into the flammability chamber
+
+**branch_height**: : height (cm) of the sample loaded into the flammability chamber
+
+**sample_wt**: weight (g) of the sample loaded into the flammability chamber
+
+**branching**: indicator of the number of branches on the sample loaded into the flammability chamber; showing sample morphology, 'bushiness', etc.                    
+
+**mpa**: water potential (-MPa)
+
+**notes_on_plant_char**: notes on plant characteristics, as taken during the flammability testing
+
+**start_time**: time that the flammability testing began for given sample
+
+**ambient_temp**: ambient temp (degrees C) as taken by small sensor on front of flammability chamber; note: this was influenced by the temperature of the chamber and therefore is not entirely reliable
+
+**ambient_humidity**: ambient humidity (%) as taken by small sensor on front of flammability chamber; note: this was influenced by the temperature of the chamber and therefore is not entirely reliable
+
+**pre_ignition_glow**: binary indicator (1 or 0) of whether or not the sample glowed prior to ignition
+
+**first_glow_time**: the time that the sample started glowing first, if visible
+
+**ignition**: indicator of whether the sample ignited: 1 = ignited on its own, M = manual ignition, 0 = no ignition
+  
+**primary_ignition**: the time that the sample ignited for the first time, if applicable
+
+**primary_time_of_flame_end**: the time that the first flame ended, if applicable
+
+**secondary_ignition**: the time that the sample ignited for the second time, if applicable
+
+**secondary_time_of_flame_end**: the time that the second flame ended, if applicable
+
+**third_ignition**: the time that the sample ignited for the third time, if applicable (a third flame only happened a few times)
+
+**third_time_of_ignition_flame_end**: the time that the third flame ended, if applicable (a third flame only happened a few times)
+
+**time_fh**: the time that the sample reached it's highest flame height
+
+**fh**: maximum flame height (cm)
+
+**time_of_glow_end**: the time that glowing ended (note: in many cases, this was unclear on the videos, so it was indicated during flammability testing by clapping; however, the 'clap' was not always right when the sample stopped glowing and, therefore, the glow metrics are somewhat unreliable)
+
+**end_time**: the time that the test ended
+
+**thermocoupler_height**: the height of the mobile thermocoupler in the back of the chamber
+
+**hotplate_height**: the height of the hot plate, which was shifted up and down based on branch_height and species differences so that the sample was not scorched by the pilot flame, but it was sufficiently close for the pilot flame to adequately ignite the sample
+
+**notes_on_flam_data**: notes on flammability data, taken during flammability testing and during video analysis
+
+**fd**: flame duration (seconds); for cases where the sample burned multiple times, the most prominent flame was selected for flame duration (typically the flame with the largest flame height and the longest flame duration)
+
+**tti**: time from the start of the test to the first ignition (seconds)
+
+**pfg**: post-flame glow (seconds); see note on glow above
+
+**max_temp**: maximum temperature (degrees C) in the time frame starting w/ primary_ignition and ending with primary_time_of_flame_end
+
+**time_at_max_temp**: the time that the maximum temperature occurred
+
+**max_temp_sensor**: the thermocoupler sensor used in calculating the maximum temperature
+
+**start_temp**: the maximum starting temperature (across all thermocouplers, degrees C)
+
+**start_temp_sensor**: the thermocoupler sensor used in calculating the starting temperature
+
+**temp_change**: the change in temperature from start to maximum (degrees C)
+
+**max_heat_flux_loessCH7**: maximum heat flux (using CH7 sensor) as calculated using fitted values using Loess regressions w/ an optimal smoothing span as derived from an optimization routine
+
+**max_heat_flux_loessCH8**: maximum heat flux (using CH8 sensor) as calculated using fitted values using Loess regressions w/ an optimal smoothing span as derived from an optimization routine
+
+**time_at_max_heat_flux_loessCH7**: time of maximum heat flux (using CH7 sensor)
+
+**time_at_max_heat_flux_loessCH8**: time of maximum heat flux (using CH8 sensor)
+
+**avg_heat_flux_stableCH7**: average heat flux (CH7 sensor) during the 'stable' period of time (15 seconds after start time, 10 seconds prior to ignition time)
+
+**avg_heat_flux_stableCH8**: average heat flux (CH8 sensor) during the 'stable' period of time (15 seconds after start time, 10 seconds prior to ignition time)
+
+**heat_flux_change**: intended to be the main heat flux variable in the analyses; calculated as: max_heat_flux_loessCH8 - avg_heat_flux_stableCH8; CH8 was used instead of CH7 due to a higher signal-to-noise ratio
+
+**prop_ig**: % of samples that ignited naturally (*one value per species*)
+
+**wet_mass**: the wet mass of the sample used in calculating live fuel moisture (one value per plant); used to calculate dw_flam_sample and ww_flam_sample
+
+**dry_mass**: the dry mass of the sample used in calculating live fuel moisture (one value per plant); used to calculate dw_flam_sample and ww_flam_sample
+
+**gdw_gfw**: equal to dry_mass/(wet_mass+dry_mass); used to calculate dw_flam_sample and ww_flam_sample
+
+**dw_flam_sample**: the dry mass of the sample (g), as calculated using live fuel moisture and the sample_wt
+
+**ww_flam_sample**: the wet mass of the sample (g), as calculated using live fuel moisture and the sample_wt
+
+**branch_volume**: the sample volume (cm^3), as calculated using branch_height, branch_width, and branch_length

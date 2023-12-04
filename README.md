@@ -1,2 +1,2 @@
-# lab-flammability-testing
-Contains code and data for community-driven laboratory flammability testing at UCSB
+# flammability-testing
+Code and data for UCSB Flammability Project
