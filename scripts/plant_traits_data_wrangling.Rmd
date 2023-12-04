@@ -1,0 +1,533 @@
+---
+title: "Data Wrangling: Plant Traits"
+author: "Zoe Fung & Joe Celebrezze"
+date: "2023-04-17"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Packages
+library(tidyverse)
+library(magrittr)
+library(janitor)
+library(dplyr)
+library(here)
+library(bayestestR) # For area_under_curve
+
+# Functions
+rename = dplyr::rename
+here = here::here
+summarise = dplyr::summarise
+group_by = dplyr::group_by
+select = dplyr::select
+```
+
+# Initial Data Cleaning
+## Leaf Data
+```{r}
+# load in data
+leaf_data <- read_csv(here('data', 'raw-data', 'plant-traits', 'leaf_data_flamm.csv')) %>%
+  clean_names()
+
+# view column names and data types
+glimpse(leaf_data)
+```
+
+## Leaf Area
+```{r}
+# load in data
+leaf_area <- read_csv(here('data', 'raw-data', 'plant-traits', 'leaf_area_flamm.csv')) %>% 
+  clean_names() %>% 
+  select(-x1, -x_1)
+
+# view column names and data types
+glimpse(leaf_area)
+```
+
+## Stem-Leaf Ratio
+```{r}
+# load in data
+stem_leaf_ratio <- read_csv(here('data', 'raw-data', 'plant-traits', 'stemleaf_massratio_flamm.csv')) %>%
+  clean_names()
+
+# view column names and data types
+glimpse(stem_leaf_ratio)
+```
+
+## Stem Data
+```{r}
+# load in data
+stem_data <- read_csv(here('data', 'raw-data', 'plant-traits', 'stem_data_flamm.csv')) %>%
+  clean_names()
+
+# view column names and data types
+glimpse(stem_data)
+```
+
+## VOC Data
+```{r}
+voc_data <- read_csv(here('data', 'raw-data', 'plant-traits', 'VOCs_JL.csv')) %>%
+  clean_names() %>% 
+  filter(species != 'Arctostaphylos densifolia', # Not interested in species we didn't burn
+         method %in% c('Control', 'Heated'), # Only interested in these two methods
+         treatment == 'WET')  %>%  # Only interested in wet treatment (since we didn't do droughted for the flammability testing)
+  select(-treatment) # Since we discarded droughted treatment, we don't really need that column anymore
+```
+
+
+# Calculating LFM
+First, getting cup weights data
+```{r}
+cup_weights_data <- read_csv(here('data', 'raw-data', 'plant-traits', 'cup_weights.csv')) %>% 
+  slice_head(n = 82)  %>% 
+  rename(cup_mass = mass) %>% 
+  mutate(dry_cup_mass = (mass_post_drying + mass_post_drying2)/2) %>%  # Using average dry cup mass as 'dry cup mass'
+  select(-mass_post_drying, -mass_post_drying2)
+
+leaf_data <- merge(leaf_data, cup_weights_data, by = 'cup_number')
+stem_data <- merge(stem_data, cup_weights_data, by = 'cup_number')
+```
+
+Subtracting cup weight from fresh and dry weights and then calculating stem- and leaf-specific LFM
+```{r}
+leaf_data <- leaf_data %>% 
+  mutate(leaf_wet_mass_g = ifelse(leaf_wet_mass_g > 1000, leaf_wet_mass_g/1000, leaf_wet_mass_g)) %>% 
+  mutate(leaf_wet_mass = leaf_wet_mass_g - cup_mass) %>% 
+  mutate(leaf_dry_mass = leaf_dry_mass - dry_cup_mass) %>% 
+  select(-leaf_wet_mass_g) %>% 
+  mutate(leaf_lfm = 100*(leaf_wet_mass - leaf_dry_mass)/leaf_dry_mass)
+
+stem_data <- stem_data %>% 
+  mutate(stem_wet_mass = stem_wet_mass - cup_mass) %>% 
+  mutate(stem_dry_mass = stem_dry_mass - dry_cup_mass) %>% 
+  mutate(stem_lfm = 100*(stem_wet_mass - stem_dry_mass)/stem_dry_mass)
+```
+
+# Data Wrangling
+## Stem Data
+```{r}
+stem_data <- stem_data %>% 
+  mutate(stem_width = (stem_width1 + stem_width2)/2) #average of two stem width measurements taken
+
+leaf_area <- leaf_area %>% 
+  mutate(plant = case_when(
+    plant_number == 1 ~ 'P1',
+    plant_number == 2 ~ 'P2',
+    plant_number == 3 ~ 'P3',
+    plant_number == 4 ~ 'P4',
+    plant_number == 5 ~ 'P5',
+    plant_number == 6 ~ 'P6',
+    plant_number == 7 ~ 'P7',
+    plant_number == 8 ~ 'P8',
+    plant_number == 9 ~ 'P9',
+    plant_number == 10 ~ 'P10',
+    plant_number == 11 ~ 'P11',
+    plant_number == 12 ~ 'P12'
+  ))
+```
+
+### Stem SA:V
+For the stem, using the formula for a frustrum where the two stem diameters are used to calculate the radii of each side of the frustrum, and each stem segment was cut to 5cm long; note that stem width is measured in mm while height is measured in cm; since we want it to all be in cm, we adjust widths acccordingly
+```{r}
+stem_data <- stem_data %>% 
+  mutate(stem_width2 = ifelse(stem_width2 > 10, stem_width2/100, stem_width2)) %>% # some outliers where things look like measurements were entered incorrectly; adjusting them so they make sense
+  mutate(stem_width1 = ifelse(stem_width1 > 10, stem_width1/10, stem_width1)) %>% 
+  mutate(stem_sa = (pi*(0.1*stem_width1+0.1*stem_width2))*sqrt((0.1*stem_width1+0.1*stem_width2)^2 + 5^2)) %>% 
+  mutate(stem_vol = (pi*5/3*((0.1*stem_width1)^2+(0.1*stem_width1*0.1*stem_width2)+(0.1*stem_width2)^2))) %>% 
+  mutate(stem_sav = stem_sa/stem_vol)
+```
+
+## VOC Data
+We're interested in the area under the curve of the VOCs over time plot. To calculate this, I used the function below to approximate the area under the curve using the trapezoidal rule:
+```{r}
+voc_data <- voc_data %>% 
+  mutate(species = case_when(
+    species == "Iris douglasiana" ~ "IRIDOU",
+    species == "Erigeron karvinskianus" ~ "ERIKAR",
+    species == "Salvia apiana" ~ "SALAPI",
+    species == "Salvia leucophylla" ~ "SALLEU",
+    species == "Artemesia californica" ~ "ARTCAL",
+    species == "Ceanothus griseus" ~ "CEAGRI",
+    species == "Malosma laurina" ~ "MALLAU",
+    species == "Heteromeles arbutifolia" ~ "HETARB"
+  )) %>% 
+  group_by(leaf_mass) %>% 
+  summarise(species = species, method = method,
+         auc_voc = area_under_curve(time, voc), # Area under curve
+         avg_voc = sum(voc)/10) # to get voc per minute average
+```
+
+## Averaging Traits
+Averaging traits of interest so that there is one value per plant
+```{r}
+stem_data_avgs <- stem_data %>% 
+  group_by(species, plant) %>% 
+  summarise(stem_lfm = mean(stem_lfm), stem_width = mean(stem_width), stem_wet_mass = mean(stem_wet_mass), stem_dry_mass = mean(stem_dry_mass), stem_sav = mean(stem_sav))
+
+leaf_data_avgs <- leaf_data %>% 
+  group_by(species, plant) %>% 
+  summarise(leaf_lfm = mean(leaf_lfm), thickness = mean(thickness), leaf_wet_mass = mean(leaf_wet_mass), leaf_dry_mass = mean(leaf_dry_mass))
+
+leaf_area_avgs <- leaf_area %>% 
+  group_by(species, plant) %>% 
+  summarise(leaf_area = mean(area_cm2))
+
+voc_data_avgs <- voc_data %>% 
+  group_by(species) %>% 
+  summarise(auc_voc = mean(auc_voc), avg_voc = mean(avg_voc), norm_avg_voc = mean(avg_voc)/mean(leaf_mass), norm_auc_voc = mean(auc_voc)/mean(leaf_mass))
+```
+
+## Combining Traits Data
+Combining datasets so that they can be easily integrated into the flamm data
+- First leaf_data and stem_data
+```{r}
+## Adding IRIDOU to stem_data w/ NAs
+species <- c(rep('IRIDOU', 9))
+plant <- c('P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9')
+na <- c(rep(999999, 9)) # so that IRIDOU data does not get lost in the merge
+stem_data_avgs_iridou <- data.frame(species, plant, na, na, na, na, na)
+colnames(stem_data_avgs_iridou) <- colnames(stem_data_avgs)
+stem_data_avgs <- rbind(stem_data_avgs, stem_data_avgs_iridou)
+## Combining
+leaf_stem_df <- merge(leaf_data_avgs, stem_data_avgs, by = c('species', 'plant'))
+```
+
+### Calculating total LFM
+```{r}
+leaf_stem_df <- leaf_stem_df %>% 
+  mutate(lfm = ifelse(stem_wet_mass > 99999, leaf_lfm, 100*((stem_wet_mass + leaf_wet_mass) - (stem_dry_mass + leaf_dry_mass))/(stem_dry_mass + leaf_dry_mass)))
+
+leaf_stem_df %>% 
+  filter(species != 'IRIDOU') %>% 
+  #filter(lfm > 0  & lfm < 500) %>% 
+  ggplot(aes(x = lfm, y = stem_lfm)) +
+    labs(x = 'LFM', y = 'LFM (stem)') +
+    geom_point() +
+    geom_smooth(method = 'lm', color = 'black') +
+    geom_abline(linetype = 2) +
+    theme_bw()
+
+leaf_stem_df %>% 
+  filter(species != 'IRIDOU') %>% 
+  #filter(lfm > 0  & lfm < 500) %>% 
+  #filter(leaf_lfm > 0  & leaf_lfm < 900) %>% 
+  ggplot(aes(x = lfm, y = leaf_lfm)) +
+    labs(x = 'LFM', y = 'LFM (leaf)') +
+    geom_point() +
+    geom_smooth(method = 'lm', color = 'black') +
+    geom_abline(linetype = 2) +
+    theme_bw()
+
+leaf_stem_df %>% 
+  filter(species != 'IRIDOU') %>% 
+  #filter(leaf_lfm > 0  & leaf_lfm < 900) %>% 
+  #filter(stem_lfm > 0  & stem_lfm < 600) %>% 
+  ggplot(aes(x = stem_lfm, y = leaf_lfm)) +
+    labs(x = 'LFM (stem)', y = 'LFM (leaf)') +
+    geom_point() +
+    geom_smooth(method = 'lm', color = 'black') +
+    geom_abline(linetype = 2) +
+    theme_bw()
+```
+
+### Dry Matter Content
+```{r}
+leaf_stem_df <- leaf_stem_df %>% 
+  mutate(leaf_dmc = leaf_dry_mass/leaf_wet_mass) %>% 
+  mutate(stem_dmc = ifelse(stem_wet_mass > 99999, 999999, stem_dry_mass/stem_wet_mass)) %>% 
+  mutate(dmc = ifelse(stem_wet_mass > 99999, leaf_dry_mass/leaf_wet_mass,
+                      (leaf_dry_mass + stem_dry_mass/leaf_wet_mass + stem_wet_mass)))
+
+leaf_stem_df %>% 
+  filter(species != 'QUEAGR' & species != 'EUGL') %>% 
+  filter(stem_wet_mass < 99999) %>% 
+  pivot_longer(cols = c(stem_dmc, dmc, leaf_dmc, stem_lfm, lfm), names_to = 'var', values_to = 'val') %>% 
+  ggplot(aes(x = species, y = val)) +
+    geom_boxplot() +
+    facet_wrap(~var, scales = 'free') +
+    theme_bw()
+
+library(GGally) #ggcorr
+leaf_stem_df %>% 
+  filter(species != 'QUEAGR' & species != 'EUGL') %>% 
+  filter(stem_wet_mass < 99999, leaf_lfm > 0) %>% 
+  select(stem_dmc, dmc, leaf_dmc, stem_lfm, lfm, leaf_lfm) %>% 
+  ggcorr(label = T)
+```
+
+- Now, stem_leaf_ratio
+note: for now, not going to add or takeaway any data prior to merging, so we will lose some of the data from the above dataset. Hopefully, Zoe, Rob and I will figure this out by looking into where the missing trait data could be.
+```{r}
+stem_leaf_ratio_clean <- stem_leaf_ratio %>% 
+  select(species, plant, date, total_branch_mass, total_leaf_mass) %>% 
+  mutate(stem_mass_ratio = total_branch_mass/(total_branch_mass + total_leaf_mass)) %>% 
+  mutate(leaf_mass_ratio = total_leaf_mass/(total_branch_mass + total_leaf_mass)) 
+  
+stem_leaf_ratio_clean <- subset(stem_leaf_ratio_clean, !(species == 'SALAPI' & plant %in% c('P9', 'P10') & date == '2022-08-24')) # Removing duplicated values for SALAPI P9 and P10 (must've accidentally measured it twice; I took the first measurements, as they were inputted by the same person as the other SALAPI measurements)
+
+leaf_stem_v2_df <- merge(stem_leaf_ratio_clean, leaf_stem_df, by = c('species', 'plant'))
+```
+
+### Leaf Area and SA:V
+
+- Leaf Area
+```{r}
+# Adding NA values for HETARB P10-12
+species <- c(rep('HETARB', 3))
+plant <- c('P10', 'P11', 'P12')
+na <- c(rep(999999, 3)) # so that IRIDOU data does not get lost in the merge
+leaf_area_avgs_hetarb <- data.frame(species, plant, na)
+colnames(leaf_area_avgs_hetarb) <- colnames(leaf_area_avgs)
+leaf_area_avgs <- rbind(leaf_area_avgs, leaf_area_avgs_hetarb)
+
+main_traits_df <- merge(leaf_stem_v2_df, leaf_area_avgs, by = c('species', 'plant'))
+```
+
+- Leaf SA:V
+Calculating surface area by multiplying leaf area x 2 and then volume multiplying leaf area times thickness
+```{r}
+main_traits_df <- main_traits_df %>% 
+  mutate(leaf_sav = ifelse(leaf_area > 99999, 999999, (2*leaf_area)/(thickness*leaf_area)))
+```
+
+### VOCs
+```{r}
+# Adding NA values for species we don't have VOC data for (MANDEN, QUEAGR, EUCGLO)
+species <- c('MANDEN', 'QUEAGR', 'EUGL')
+na <- c(rep(999999, 3)) # so that IRIDOU data does not get lost in the merge
+voc_data_avgs_nas <- data.frame(species, na, na, na, na)
+colnames(voc_data_avgs_nas) <- colnames(voc_data_avgs)
+voc_data_avgs <- rbind(voc_data_avgs, voc_data_avgs_nas)
+
+main_traits_df <- merge(main_traits_df, voc_data_avgs, by = 'species')
+```
+
+- Dealing with NAs from above (HETARB, IRIDOU)
+```{r}
+main_traits_df <- main_traits_df %>% 
+  mutate(stem_lfm = ifelse(stem_lfm > 99999, NA, stem_lfm)) %>% 
+  mutate(stem_width = ifelse(stem_width > 99999, NA, stem_width)) %>%
+  mutate(stem_wet_mass = ifelse(stem_wet_mass > 99999, NA, stem_wet_mass)) %>% 
+  mutate(stem_dry_mass = ifelse(stem_dry_mass > 99999, NA, stem_dry_mass)) %>% 
+  mutate(leaf_area = ifelse(leaf_area > 99999, NA, leaf_area)) %>% 
+  mutate(auc_voc = ifelse(auc_voc == 999999, NA, auc_voc)) %>% 
+  mutate(avg_voc = ifelse(avg_voc == 999999, NA, avg_voc)) %>% 
+  mutate(norm_auc_voc = ifelse(norm_auc_voc == 999999, NA, norm_auc_voc)) %>% 
+  mutate(norm_avg_voc = ifelse(norm_avg_voc == 999999, NA, norm_avg_voc)) %>% 
+  mutate(stem_dmc = ifelse(stem_dmc == 999999, NA, stem_dmc)) %>% 
+  mutate(stem_sav = ifelse(stem_dmc == 999999, NA, stem_sav)) %>% 
+  mutate(leaf_sav = ifelse(leaf_sav == 999999, NA, leaf_sav))
+```
+
+## Changing 'plant' to numeric
+```{r}
+main_traits_df <- main_traits_df %>% 
+  mutate(plant = case_when(
+    plant == 'P1' ~ 1,
+    plant == 'P2' ~ 2,
+    plant == 'P3' ~ 3,
+    plant == 'P4' ~ 4,
+    plant == 'P5' ~ 5,
+    plant == 'P6' ~ 6,
+    plant == 'P7' ~ 7,
+    plant == 'P8' ~ 8,
+    plant == 'P9' ~ 9,
+    plant == 'P10' ~ 10,
+    plant == 'P11' ~ 11,
+    plant == 'P12' ~ 12
+  )) %>% 
+  mutate(species = ifelse(species == 'EUGL', 'EUCGLO', species))
+```
+
+## Calculating LMA, SLA
+Note that for ERIKAR P4-P10, all ARTCAL, SALLEU P11, SALAPI P12, leaf dry mass was for all of the leaves rather than just the five used in the leaf scans, hence why those values are NA below
+```{r}
+main_traits_df <- main_traits_df %>% 
+  mutate(LMA = ifelse(species == 'ARTCAL' | species == 'ERIKAR' & plant %in% c(4:10), NA, leaf_dry_mass/leaf_area),
+         SLA = ifelse(species == 'ARTCAL' | species == 'ERIKAR' & plant %in% c(4:10), NA, leaf_area/leaf_dry_mass))
+```
+
+Imputing species mean LMAs/SLAs for missing values (for HETARB and ERIKAR)
+```{r}
+# LMA
+mean_HETARB_LMA <- main_traits_df %>% 
+  drop_na(LMA) %>% 
+  filter(species == 'HETARB') %>% 
+  summarise(LMA = mean(LMA))
+
+main_traits_df <- main_traits_df %>% 
+  mutate(LMA = ifelse(species == 'HETARB' & is.na(LMA), mean_HETARB_LMA[1,1], LMA))
+
+mean_ERIKAR_LMA <- main_traits_df %>% 
+  drop_na(LMA) %>% 
+  filter(species == 'ERIKAR') %>% 
+  summarise(LMA = mean(LMA))
+
+main_traits_df <- main_traits_df %>% 
+  mutate(LMA = ifelse(species == 'ERIKAR' & is.na(LMA), mean_ERIKAR_LMA[1,1], LMA))
+
+# SLA
+mean_HETARB_SLA <- main_traits_df %>% 
+  drop_na(SLA) %>% 
+  filter(species == 'HETARB') %>% 
+  summarise(SLA = mean(SLA))
+
+main_traits_df <- main_traits_df %>% 
+  mutate(SLA = ifelse(species == 'HETARB' & is.na(SLA), mean_HETARB_SLA[1,1], SLA))
+
+mean_ERIKAR_SLA <- main_traits_df %>% 
+  drop_na(SLA) %>% 
+  filter(species == 'ERIKAR') %>% 
+  summarise(SLA = mean(SLA))
+
+main_traits_df <- main_traits_df %>% 
+  mutate(SLA = ifelse(species == 'ERIKAR' & is.na(SLA), mean_ERIKAR_SLA[1,1], SLA))
+```
+
+### ARTCAL
+For ARTCAL, we did not get the correct measurements for any plants, so we had to use a separate potted plant to get a species average and impute that value for the LMA for ARTCAL
+```{r}
+# load in data
+artcal_lma <- read_csv(here('data', 'raw-data', 'plant-traits', 'ARTCAL_LMA.csv')) %>%
+  clean_names() %>% 
+  rename(cup_number = cup_no)
+
+# subtracting cup weights
+artcal_lma <- merge(artcal_lma, cup_weights_data, by = 'cup_number')
+artcal_lma <- artcal_lma %>% 
+  mutate(wet_mass = wet_mass - cup_mass,
+         dry_mass = dry_mass - dry_cup_mass)
+
+# calculating average lma
+artcal_lma_means <- artcal_lma %>% 
+  group_by(id) %>% 
+  summarise(wet_mass = mean(wet_mass), dry_mass = mean(dry_mass), leaf_area = sum(area)) %>% 
+  mutate(LMA = dry_mass/leaf_area, SLA = leaf_area/dry_mass)
+mean_ARTCAL_LMA <- artcal_lma_means %>% 
+  summarise(LMA = mean(LMA), SLA = mean(SLA))
+
+# adding to main dataset
+main_traits_df <- main_traits_df %>% 
+  mutate(SLA = ifelse(species == 'ARTCAL' & is.na(SLA), mean_ARTCAL_LMA$SLA[1], SLA)) %>% 
+  mutate(LMA = ifelse(species == 'ARTCAL' & is.na(LMA), mean_ARTCAL_LMA$LMA[1], LMA))
+```
+
+## Small Adjustments
+```{r}
+# Filtering out EUCGLO and QUEAGR; not including these species in this analysis
+main_traits_df <- main_traits_df %>% 
+  filter(species != 'EUCGLO',
+         species != 'QUEAGR') %>% 
+  mutate(species = ifelse(species == 'MANDEN', 'ARCDEN', species))
+```
+
+# Combining with Flam. Dataset
+```{r}
+flam.df <- read.csv(here('data', 'processed-data', 'clean_flamm_data.csv')) %>% 
+  select(-date)
+
+main_df <- merge(main_traits_df, flam.df, by = c('species', 'plant'))
+```
+
+## Small Adjustments (2)
+```{r}
+# One missing mpa value for HETARB; because we don't have many HETARB samples as is, let's impute the species mean for this mpa like we did for LMAs
+mean_HETARB_mpa <- main_df %>% 
+  drop_na(mpa) %>% 
+  filter(species == 'HETARB') %>% 
+  summarise(mpa = mean(mpa))
+
+main_df <- main_df %>% 
+  mutate(mpa = ifelse(species == 'HETARB' & is.na(mpa), mean_HETARB_mpa[1,1], mpa))
+
+# Getting rid of duplicate rows
+duplicates <- main_df %>% 
+  unite('id', c(species, plant, rep), sep = '_', remove = F)
+
+duplicates[duplicated(duplicates$id), ]
+```
+
+# Sample Weight/Size
+## Dry Weight, Wet Weight
+```{r}
+main_df <- main_df %>% 
+  mutate(wet_mass = ifelse(species == 'IRIDOU', leaf_wet_mass, # Because IRIDOU has no stems
+                           stem_wet_mass + leaf_wet_mass),
+         dry_mass = ifelse(species == 'IRIDOU', leaf_dry_mass, 
+                           stem_dry_mass + leaf_dry_mass),
+         gdw_gfw = dry_mass/(wet_mass+dry_mass),
+         dw_flam_sample = gdw_gfw * sample_wt, # need to change to sample weight
+         ww_flam_sample = sample_wt - dw_flam_sample)
+```
+
+## Sample Volume
+```{r}
+main_df <- main_df %>% 
+  mutate(branch_volume = branch_length*branch_width*branch_height)
+```
+
+# Branching
+For branching, Rob suggested we use a branching per sample length metric that gives us more information regarding the 'bushiness' of the sample rather than just the number of branches
+```{r}
+main_df <- main_df %>% 
+  rename(no_branches = branching) %>%  # to rename the initial variable to reflect # of branches so that 'branching' reflects what we're actually interested in
+  mutate(branching = (no_branches + 1)/branch_length)
+```
+
+# Density
+Also following a suggestion from Rob, using sample density (g/cm3) as a comparable variable to fuel density which is of-concern on the landscape scale
+```{r}
+main_df <- main_df %>% 
+  mutate(sample_density = sample_wt/branch_volume)
+```
+
+# Dealing w/ NAs
+For some of the plant traits, there are NA values that are due to randomly missing data. For these, we'd like to keep the datapoints in the analysis, but -- to do so -- we'll have to impute the data by using either the median or the mean values. First, we should take a look at which values are NA that we could deal with
+```{r}
+summary(main_df)
+```
+
+For SALAPI P8 R2, we have NAs for branch dimensions, sample weight, branching and mpa; because this is only one datapoint, I think the best thing to do is to delete this datapoint
+```{r}
+main_df <- main_df %>% 
+  drop_na(branch_height)
+```
+
+# Dry Weight (Deviation from Species Mean)
+```{r}
+dw_avgs <- main_df %>% 
+  drop_na(dw_flam_sample) %>% 
+  group_by(species) %>% 
+  summarise(dw_mean = mean(dw_flam_sample), dw_sd = sd(dw_flam_sample))
+
+main_df <- main_df %>% 
+  mutate(dw_sppdev = ifelse(is.na(dw_flam_sample), NA, case_when(
+    species == 'ARCDEN' ~ (dw_flam_sample - as.numeric(dw_avgs[1,2]))/as.numeric(dw_avgs[1,3]),
+    species == 'ARTCAL' ~ (dw_flam_sample - as.numeric(dw_avgs[2,2]))/as.numeric(dw_avgs[2,3]),
+    species == 'CEAGRI' ~ (dw_flam_sample - as.numeric(dw_avgs[3,2]))/as.numeric(dw_avgs[3,3]),
+    species == 'ERIKAR' ~ (dw_flam_sample - as.numeric(dw_avgs[4,2]))/as.numeric(dw_avgs[4,3]),
+    species == 'HETARB' ~ (dw_flam_sample - as.numeric(dw_avgs[5,2]))/as.numeric(dw_avgs[5,3]),
+    species == 'IRIDOU' ~ (dw_flam_sample - as.numeric(dw_avgs[6,2]))/as.numeric(dw_avgs[6,3]),
+    species == 'MALLAU' ~ (dw_flam_sample - as.numeric(dw_avgs[7,2]))/as.numeric(dw_avgs[7,3]),
+    species == 'SALAPI' ~ (dw_flam_sample - as.numeric(dw_avgs[8,2]))/as.numeric(dw_avgs[8,3]),
+    species == 'SALLEU' ~ (dw_flam_sample - as.numeric(dw_avgs[9,2]))/as.numeric(dw_avgs[9,3]))))
+```
+
+# Cutting IRIDOU
+```{r}
+main_df <- main_df %>% 
+  filter(species != 'IRIDOU')
+```
+
+
+# Writing csv
+```{r}
+summary(main_traits_df)
+write.csv(main_traits_df, here('data', 'processed-data', 'plant_traits_data.csv'))
+
+summary(main_df)
+write.csv(main_df, here('data', 'processed-data', 'main_dataset.csv'))
+```

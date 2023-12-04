@@ -1,0 +1,725 @@
+---
+title: "Wonderlabs"
+author: "Indra Boving"
+date: "11/24/2021"
+output: html_document
+---
+#Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(janitor)
+library(here)
+library(tidyverse)
+library(kableExtra)
+library(HH)
+library(devtools)
+library(likert)
+library(cowplot)
+library(hrbrthemes)
+library(ggpubr)
+here = here::here
+summarise = dplyr::summarise
+rename = dplyr::rename
+
+ggplot <- function(...) { ggplot2::ggplot(...) + 
+    theme(panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+          panel.grid.major = element_blank(),  # Hide major gridlines
+          panel.grid.minor = element_blank()) # Hide minor gridlines
+}
+```
+
+#Data
+```{r, warning = FALSE}
+data <- read_csv(here("data", "raw-data", "survey", "wonderlabs.csv"), show_col_types = FALSE) %>% 
+  clean_names() %>% 
+  filter(response_type != "Survey Preview") %>% 
+  dplyr::select(-progress, -finished, -distribution_channel) %>% 
+  separate(control, c("rent_own", "control"), sep = ",") %>% 
+  separate(maintenance, c("maint1", "maint2", "maint3", "maint4", "maint5"), sep = ",") %>% 
+  separate(time_30mins, c("time1", "time2"), sep = ",") %>% 
+  mutate(birthyear = case_when(
+    birthyear == "12/31/54" ~ 1954, 
+    TRUE ~ as.numeric(birthyear))) %>% 
+  mutate(income = as.numeric(income)) %>% 
+  mutate(age = 2021 - birthyear) 
+```
+#--------------------------------------------------------------------
+
+#Demographics
+```{r, warning = FALSE}
+demographics <- data %>% 
+  dplyr::select(response_id, user_language, rent_own, control, birthyear, gender, race, language, income, age, time1)
+```
+
+
+```{r}
+income <- demographics %>% 
+  drop_na(income) %>% 
+  summarise(mean = mean(income), 
+            median = median(income), 
+            range = range(income))
+income
+
+race<- demographics %>% 
+  drop_na(race) %>% 
+  tabyl(race)
+race
+```
+
+### What percent of respondents own vs rent their home? 
+```{r}
+renters_counts <- demographics %>% 
+  drop_na(rent_own, control) %>% 
+  tabyl(rent_own, control)
+renters_counts
+
+renters_counts_props <- renters_counts %>% 
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 2) %>% 
+  adorn_ns()
+renters_counts_props
+
+kable(renters_counts_props) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+### What language do responndents speak?
+```{r, include = FALSE}
+language_counts <- demographics %>% 
+  drop_na(language) %>% 
+  tabyl(language)
+language_counts
+```
+
+### How old are they?
+```{r}
+age_table <- demographics %>% 
+  drop_na(age) %>% 
+  filter(age > 0) %>% 
+  summarise(mean = mean(age), 
+            range = range(age), 
+            median = median(age))
+age_table
+```
+
+```{r}
+gender_table <- demographics %>% 
+  drop_na(gender) %>% 
+  tabyl(gender)
+gender_table
+```
+
+
+#--------------------------------------------------------------------
+
+# Ecosystem services: 
+
+```{r}
+es_data_id <- data %>% 
+  #dplyr::select(3, 5:28) %>%  #includes response ID
+  dplyr::select(3, 5:28) %>% 
+  drop_na %>% 
+  #as.data.frame() %>% 
+  mutate_all(funs(str_replace(., "No Importance", "1"))) %>% 
+  mutate_all(funs(str_replace(., "Low Importance", "2"))) %>% 
+  mutate_all(funs(str_replace(., "Medium Importance", "3"))) %>% 
+  mutate_all(funs(str_replace(., "Very High Importance", "5"))) %>%   mutate_all(funs(str_replace(., "High Importance", "4"))) %>%  
+  mutate_at((2:25), as.numeric) %>% 
+  pivot_longer(!response_id, names_to = "item", values_to = "count") %>% 
+  mutate(category = case_when(
+    item == "food_or_home_garden" ~ "provisioning",
+    item == "commercial_agriculture" ~ "provisioning",
+    item == "medicinal" ~ "provisioning",
+    item == "edible_wild_plants" ~ "provisioning",
+    item == "food_or_habitat_for_wild_animals" ~ "provisioning",
+    item == "food_or_space_for_pet_animals" ~ "provisioning",
+    item == "air_quality_control" ~ "regulating",
+    item == "air_quality_control" ~ "regulating",
+    item == "erosion_control" ~ "regulating",
+    item == "pollination" ~ "regulating",
+    item == "cooling_provides_shade" ~ "regulating",
+    item == "soil_fertility_control" ~ "regulating",
+    item == "waste_treatment" ~ "regulating",
+    item == "protect_or_shield_my_home_from_wildfire" ~ "regulating",
+    item == "place_for_private_recreation_physical_activity" ~ "cultural",
+    item == "place_for_socializationl" ~ "cultural",
+    item == "privacy" ~ "cultural",
+    item == "religious_or_spiritual" ~ "cultural",
+    item == "beauty" ~ "cultural",
+    item == "firewood" ~ "provisioning",
+    item == "sense_of_place" ~ "cultural",
+    item == "tranquility_mental_health" ~ "cultural",
+    item == "inspiration_for_art_design" ~ "cultural",
+    item == "observing_the_natural_world" ~ "cultural",
+    item == "block_or_deter_entry_from_my_home_or_property" ~ "cultural", 
+item == "place_for_socialization" ~ "cultural")) %>% 
+  mutate(category_n = case_when(
+    category == "provisioning" ~ 8, 
+    category == "cultural" ~ 11,
+    category == "regulating" ~ 8))
+
+
+#summary table: 
+totals_by_id <- es_data_id %>% 
+  group_by(response_id, category) %>% 
+  mutate(sum_category = sum(count)) %>% 
+  mutate(score = sum_category/category_n) %>%
+ungroup() %>%
+group_by(category) %>%
+mutate(mean_score = mean(score)) %>% 
+ungroup() %>% 
+group_by(item) %>% 
+mutate(sum_item = sum(count)) %>% 
+add_tally() %>% 
+mutate(score_item = sum_item/n) %>% 
+mutate(mean_score_item = mean(score_item))
+```
+
+### ES and maintainance: 
+
+```{r, warning = FALSE}
+maintainance_1 <- data %>% 
+  dplyr::select(response_id, maint1, maint2, maint3, trait, writein_trait, rent_own, control, time1) %>% 
+  drop_na(maint1)
+```
+
+```{r}
+maintainance <- merge(totals_by_id, maintainance_1, by = "response_id")  
+```
+
+```{r}
+maintainance %>% 
+  #filter(category == "cultural") %>% 
+  dplyr::group_by(item, time1) %>% 
+  summarise(mean_score_item_time1 = mean(score_item), time1 = time1, item = item, category = category) %>% 
+  ggplot(aes(y = mean_score_item_time1, x = time1, fill = item)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~category, nrow = 3) +
+  labs(y = "Score", x = "Importance") +
+  theme(legend.position = "bottom", 
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+maintainance %>%
+  group_by(time1, category) %>% 
+  mutate(mean_score_time = mean(score)) %>% 
+ggplot(aes(y = mean_score_time, x = time1, fill = category)) +
+  geom_col(position = "dodge") +
+  theme_bw() +
+  scale_fill_brewer(palette = "YlOrRd") +
+  labs(y = "Score", x = "Importance") +
+  theme(legend.position = "bottom", 
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+maintainance %>%
+  ungroup() %>% 
+  mutate(trait_names = case_when(
+    trait == "Produces food or edibles" ~ "Edible", 
+    trait == "Fragrant (smells good)" ~ "Fragrant", 
+    trait == "Requires little watering to stay healthy" ~ "Drought tolorant", 
+    trait  == "Flowers" ~ "Flowers", 
+    writein_trait %in% c("wildlife value and screening", "wildlife habitat", "all of the above, especially wildlife food", "good for honey bees & Humming birds", "Hosts birds, provides shade","Natives that are food or shelter to native insects. Plants that require a small amount of water. I also like flowering plants that smell nice.") ~ "Wildlife", 
+    writein_trait %in% c("Natives that are food or shelter to native insects. Plants that require a small amount of water. I also like flowering plants that smell nice.", "all of the above") ~ "Flowers", 
+    writein_trait %in% c("Natives that are food or shelter to native insects. Plants that require a small amount of water. I also like flowering plants that smell nice.", "all of the above") ~ "Drought tolorant"
+  )) %>% 
+  group_by(item, trait) %>% 
+  mutate(mean_score_trait = mean(score)) %>% 
+  filter(trait != "Other:") %>% 
+  drop_na(item) %>% 
+ggplot(aes(y = mean_score_trait, x = trait_names)) +
+  geom_col(position = "dodge") +
+  theme_bw() +
+  scale_fill_viridis_d() +
+  labs(y = "Score", x = "Trait") +
+  theme(legend.position = "bottom") +
+  facet_wrap(~category)
+```
+
+#Plant Traits:
+```{r}
+plants <- data %>% 
+  dplyr::select(response_id, trait, writein_trait, time1) %>% 
+ mutate(trait_names = case_when(
+    trait == "Produces food or edibles" ~ "Edible", 
+    trait == "Fragrant (smells good)" ~ "Fragrant", 
+    trait == "Requires little watering to stay healthy" ~ "Drought Tolerant", 
+    trait  == "Flowers" ~ "Flowers", 
+    writein_trait %in% c("wildlife value and screening", "wildlife habitat", "all of the above, especially wildlife food", "good for honey bees & Humming birds", "Hosts birds, provides shade","Natives that are food or shelter to native insects. Plants that require a small amount of water. I also like flowering plants that smell nice.") ~ "Wildlife Habitat", 
+    writein_trait %in% c("Natives that are food or shelter to native insects. Plants that require a small amount of water. I also like flowering plants that smell nice.", "all of the above") ~ "Flowers", 
+    writein_trait %in% c("Natives that are food or shelter to native insects. Plants that require a small amount of water. I also like flowering plants that smell nice.", "all of the above") ~ "Drought Tolerant"
+  )) %>% 
+  drop_na(trait_names)
+```
+
+```{r}
+pct_plants <- plants %>% 
+  group_by(trait_names) %>% 
+  tally()
+pct_plants <- pct_plants %>% 
+  mutate(pct = n/sum(pct_plants$n)*100)
+  
+plants_text <- data.frame(trait_names = c('Wildlife Habitat', 'Fragrant', 'Flowers', 'Edible', 'Drought Tolerant'),
+                          trait_labs = c('Wildlife Habitat (C,R,P)', 'Fragrant (C,R)', 'Flowers (C,R)', 'Edible (P)', 'Drought Tolerant (C,R)'),
+                          y.lab = c(26, 13, 17, 29.5, 40),
+                          lab.color = c(rep('black', 4), 'white'))
+
+traits.survey.plot <- pct_plants %>% 
+  ggplot(aes(x = trait_names, y = pct)) +
+  geom_bar(fill = 'gray30', stat = 'identity') +
+  geom_text(data = plants_text, aes(x = trait_names, label = trait_labs, y = y.lab, color = lab.color),
+            fontface = 'bold', size = 7.5) +
+  scale_color_manual(values = c('black', 'white')) +
+  labs(y = '% of Responses', 
+       x = "Trait",
+       fill = "Trait") +
+  coord_flip() +
+  scale_x_discrete(position = 'top') +
+  theme(legend.position = 'none',
+        axis.title.y = element_blank(),
+        axis.title.x = element_text(size = 20, face = 'bold'),
+        axis.text.x = element_text(size = 18),
+        #axis.text.y = element_text(size = 14, face = 'bold'),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        plot.margin = unit(c(.25, .15, 1.46, .15), "cm"))
+traits.survey.plot
+```
+
+Setting up dataframe showing how our selected speccies fit into the categories described in the above barplot
+```{r}
+species <- c('ARCDEN', 'ARTCAL', 'CEAGRI', 'ERIKAR', 'HETARB', 'IRIDOU', 'MALLAU', 'SALAPI', 'SALLEU')
+`Drought Tolerant` <- c(1, 1, 1, 0.75, 1, 0.5, 1, 1, 1)
+Edible <- c(0.5, 0.5, 0.5, 1, 0.5, 0, 0.5, 1, 1)
+`Wildlife Habitat` <- c(1, 1, 1, 0.5, 1, 0.5, 1, 1, 1)
+Flowers <- c(1, 0.5, 1, 1, 1, 1, 0.5, 1, 1)
+Fragrant <- c(0, 1, 1, 0, 0.5, 0, 1, 1, 1)
+Flammable <- c(0.4287465, 0.3767518, 0.6809514, 0.1153639, 0.8574929, 0, 0.7776964, 1, 0.8411896)
+species_traits <- data.frame(species, `Drought Tolerant`, Edible, `Wildlife Habitat`, Flowers, Fragrant, Flammable) %>% 
+  pivot_longer(cols = !c(species), names_to = 'trait', values_to = 'rep')
+
+repr.plot <- ggplot(species_traits, aes(x = trait, y = species, fill= rep)) + 
+  geom_tile() +
+  scale_fill_gradient(low="gray90", high="gray30") +
+  labs(fill = 'Representative?') +
+  theme(panel.background = element_rect(fill='white', colour='black'),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.title = element_blank(),
+          axis.text = element_text(size = 12, face = 'bold'),
+          legend.title = element_text(size = 12, face = 'bold'),
+          legend.position = 'bottom')
+repr.plot
+```
+
+## Arranged
+```{r}
+ggarrange(traits.survey.plot, repr.plot,
+          labels = c('B', 'C'),
+          font.label = list(size = 28),
+          ncol = 1)
+#ggsave(here('figures', 'main_figures', 'desirable.traits.survey.png'), height = 12, width = 10)
+```
+
+# Plant species
+```{r}
+species_list_data <- read.csv(here('data', 'processed-data', 'species_list_data.csv'))[1:145,]
+
+species_list_data <- species_list_data %>% 
+  mutate(selected = ifelse(
+    species.name %in% c('Artemesia californica', 'Ceanothus sp.', 'Erigeron karvinskianus', 'Heteromeles arbutifolia', 'Iris sp.', 'Arctostaphylos sp.', 'Salvia sp.'), 'Yes', 'No'))
+
+species_list_summary <- species_list_data %>% 
+  drop_na(species.name) %>% 
+  group_by(species.name, selected) %>% 
+  tally() %>% 
+  mutate(species.name = as.factor(species.name)) %>% 
+  arrange(n)
+
+# adding in malosma laurina with # of responses = 0 to summary
+mallau_add <- data.frame(species.name = 'Malosma laurina', selected = 'Yes', n = 0)
+species_list_summary <- rbind(species_list_summary, mallau_add)
+
+species_list_summary$species.name <- factor(species_list_summary$species.name, levels = species_list_summary$species.name[order(species_list_summary$n)])
+species_list_summary$selected <- factor(species_list_summary$selected, levels = c('Yes', 'No'))
+
+
+species_list <- species_list_summary %>% 
+ggplot(aes(x = n, y = species.name, color = selected)) +
+  geom_point(size = 4) +
+  geom_segment(aes(x=0, xend=n, y=species.name, yend=species.name), size = 1) +
+  scale_color_manual(values = c('black', scales::alpha('gray70', 0.7))) +
+  labs(color = 'Tested?', x = '# of Responses') +
+  theme(legend.position = c(0.65, 0.1),
+        axis.title.y = element_blank(),
+        axis.title.x = element_text(face = 'bold', size = 16),
+        legend.title = element_text(face = 'bold', size = 14),
+        legend.text = element_text(size = 12),
+        axis.text.y = element_text(face = 'italic', size = 14),
+        axis.text.x = element_text(size = 14))
+
+ggarrange(species_list,
+          font.label = list(size = 28),
+          ncol = 1)
+
+ggsave(here('figures', 'main_figures', 'species.tested.vs.survey.png'), height = 15, width = 7)
+```
+
+-----------------------------------------------------------------
+```{r}
+es_data <- data %>% 
+  #select(3, 5:28) %>%  #includes response ID
+  dplyr::select(5:28) %>% 
+  drop_na()
+
+options(digits = 2)
+
+make_p_tab <- function(x) {
+  es_data %>% 
+    drop_na() %>% 
+  dplyr::select(x) %>% 
+  tabyl(x)
+}
+
+to_do <- colnames(es_data)
+
+dt_list <- map(to_do, make_p_tab)
+
+mergeDTs <- function(dt_list, by = NULL, sort = FALSE) {
+  Reduce(
+    function(...) {
+      merge(..., by = by, all = TRUE, sort = sort)
+    }, dt_list)
+}
+
+#mergeDTs(dt_list)
+```
+#Likert scale
+
+```{r}
+es_data <- data %>% 
+  #dplyr::select(3, 5:28) %>%  #includes response ID
+  dplyr::select(5:28) %>% 
+  drop_na %>% 
+  as.data.frame() %>% 
+  mutate_if(is.character, as.factor)
+
+class(es_data$medicinal)
+
+str(es_data)
+
+#diagnose(es_data)
+
+mylevels <- c('No Importance', 'Low Importance', 'Medium Importance', 'High Importance', 'Very High Importance')
+
+for(i in seq_along(es_data)) {
+	es_data[,i] <- factor(es_data[,i], levels=mylevels)
+}
+
+sapply(es_data, class) #Verify that all the columns are indeed factors
+sapply(es_data, function(x) { length(levels(x)) } ) # The number of levels in each factor
+
+summary <- summary(es_data)
+
+es_likert <- likert::likert(es_data)
+es_likert
+
+es_likert_counts <- summary(es_likert)
+
+plot(es_likert)
+
+likert.heat.plot(es_likert)
+
+```
+
+```{r}
+#compare different service types: 
+es_likert_df <- as.data.frame(es_likert$results)
+
+es_likert_df <- es_likert_df %>% 
+  mutate(category = case_when(
+    Item == "food_or_home_garden" ~ "provisioning",
+    Item == "commercial_agriculture" ~ "provisioning",
+    Item == "medicinal" ~ "provisioning",
+    Item == "edible_wild_plants" ~ "provisioning",
+    Item == "food_or_habitat_for_wild_animals" ~ "provisioning",
+    Item == "food_or_space_for_pet_animals" ~ "provisioning",
+    Item == "air_quality_control" ~ "regulating",
+    Item == "air_quality_control" ~ "regulating",
+    Item == "erosion_control" ~ "regulating",
+    Item == "pollination" ~ "regulating",
+    Item == "cooling_provides_shade" ~ "regulating",
+    Item == "soil_fertility_control" ~ "regulating",
+    Item == "waste_treatment" ~ "regulating",
+    Item == "protect_or_shield_my_home_from_wildfire" ~ "regulating",
+    Item == "place_for_private_recreation_physical_activity" ~ "cultural",
+    Item == "place_for_socializationl" ~ "cultural",
+    Item == "privacy" ~ "cultural",
+    Item == "religious_or_spiritual" ~ "cultural",
+    Item == "beauty" ~ "cultural",
+    Item == "firewood" ~ "provisioning",
+    Item == "sense_of_place" ~ "cultural",
+    Item == "tranquility_mental_health" ~ "cultural",
+    Item == "inspiration_for_art_design" ~ "cultural",
+    Item == "observing_the_natural_world" ~ "cultural",
+    Item == "block_or_deter_entry_from_my_home_or_property" ~ "cultural", 
+Item == "place_for_socialization" ~ "cultural"))
+
+  
+es_likert_cat <- merge(es_likert_counts, es_likert_df) %>% 
+  rename(low_percent = low, 
+         neut_percent = neutral,
+         high_percent = high, 
+         mean_value = mean)
+```
+
+#MAIN FIGURE: 
+```{r}
+melted <- reshape::melt(es_likert_df) %>% 
+  mutate(item_title = str_replace_all(Item, "_", " ")) %>% 
+  mutate(item_title = str_to_title(item_title)) %>% 
+  mutate(item_title = str_replace_all(item_title, " Or ", "/")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Private Recreation Physical Activity", "Private Recreation"),
+         item_title = str_replace_all(item_title, "Of", "of"),
+         item_title = str_replace_all(item_title, "For", "for"),
+         item_title = str_replace_all(item_title, "The", "the"),
+         item_title = str_replace_all(item_title, "My", "my"),
+         item_title = str_replace_all(item_title, "From", "from"),
+         item_title = str_replace_all(item_title, "Food/Home Garden", "Home Garden"),
+         item_title = str_replace_all(item_title, "Cooling Provides Shade",
+                                      "Cooling/Provides Shade"),
+         item_title = str_replace_all(item_title, "Protect/Shield my Home from Wildfire",
+                                      "Protect my Home from Wildfire")) %>%  # fixing some of the item titles
+  filter(Item %in% c('commercial_agriculture', 'cooling_provides_shade', 'edible_wild_plants', 'erosion_control', 'food_or_habitat_for_wild_animals', 'food_or_home_garden', 'observing_the_natural_world', 'privacy', 'place_for_socialization', 'pollination', 'protect_or_shield_my_home_from_wildfire', 'religious_or_spiritual', 'soil_fertility_control')) %>% # selecting certain categories to include in figure
+  mutate(cat_num = case_when(
+    category %in% "provisioning" ~ 1, 
+    category %in% "regulating" ~ 2, 
+    category %in% "cultural" ~ 3, 
+  ), 
+  cat_num = as.numeric(cat_num))
+melted
+
+max_value_very_high <- melted %>% 
+  filter(variable %in% c("Very High Importance")) %>% 
+  group_by(item_title) %>% 
+  mutate(very_high_value = max(value)) %>% 
+  dplyr::select("item_title", "very_high_value")
+
+melted <- merge(melted, max_value_very_high, by = c("item_title"))
+
+leg <-  melted %>% 
+  mutate(variable = case_when(variable == 'No Importance' ~ 'None',
+                              variable == 'Low Importance' ~ 'Low',
+                              variable == 'Medium Importance' ~ 'Medium',
+                              variable == 'High Importance' ~ 'High',
+                              variable == 'Very High Importance' ~ 'Very High')) %>% 
+  mutate(variable = fct_relevel(variable, c('None', 'Low', 'Medium', 'High', 'Very High'))) %>% 
+  #filter(cat_num == 1) %>% 
+  ggplot()+
+  geom_bar(aes(x = reorder(item_title,cat_num), y=value, fill=variable), position="stack", stat="identity")+
+  coord_flip() + 
+  labs(y = "% of Responses", x = '', fill = 'Importance')+
+  xlab("")+
+  scale_fill_manual(values = c("#595D7C", "#797F91", "#ADB6B2", "#C17C79", "#D24D4B"), guide = guide_legend(reverse = TRUE)) +
+  #scale_fill_brewer(palette="BrBG", guide = guide_legend(reverse = TRUE))+
+  theme(legend.position="bottom", 
+        legend.text = element_text(size = 20),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        plot.margin = unit(c(0, 0, 0, 0), "cm"),
+        legend.title = element_text(face = 'bold', size = 22))
+        
+leg
+
+cultural <-  melted %>% 
+  filter(cat_num == 3) %>% 
+  ggplot()+
+  geom_bar(aes(x = reorder(item_title, very_high_value), y=value, fill=variable), position="stack", stat="identity")+
+  coord_flip() + 
+  labs(x = "Cultural") + # change to title = 'cultural' to revert to previous aesthetic (same goes for below)
+  scale_fill_manual(values = c("#595D7C", "#797F91", "#ADB6B2", "#C17C79", "#D24D4B")) +
+  #scale_fill_brewer(palette="BrBG")+
+  theme(legend.position="none", 
+        axis.title.y = element_text(face = 'bold', size = 22, vjust = 4, hjust = 0.3),
+        axis.text.y = element_text(size = 18),
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        #plot.title = element_text(face = 'bold', size = 16),
+        plot.margin = unit(c(.25, 0, .1, 0.2), "cm")
+        )
+cultural
+
+reg <-  melted %>% 
+  filter(cat_num == 2) %>% 
+  ggplot()+
+  geom_bar(aes(x = reorder(item_title, very_high_value), y=value, fill=variable), position="stack", stat="identity")+
+  coord_flip() + 
+  labs(x = "Regulating") +
+  scale_fill_manual(values = c("#595D7C", "#797F91", "#ADB6B2", "#C17C79", "#D24D4B")) +
+  #scale_fill_brewer(palette="BrBG")+
+  theme(legend.position="none", 
+        axis.title.y = element_text(face = 'bold', size = 22, vjust = 1),
+        axis.text.y = element_text(size = 18),
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        #plot.title = element_text(face = 'bold', size = 16),
+        plot.margin = unit(c(0, 0, .1, .2), "cm")
+        )
+reg
+
+prov <-  melted %>% 
+  filter(cat_num == 1) %>% 
+  ggplot()+
+  geom_bar(aes(x = reorder(item_title, very_high_value), y=value, fill=variable), position="stack", stat="identity")+
+  scale_y_continuous(limits = c(0,100)) +
+  coord_flip() + 
+  labs(x = "Provisioning", y = "% of Responses") +
+  scale_fill_manual(values = c("#595D7C", "#797F91", "#ADB6B2", "#C17C79", "#D24D4B")) +
+  #scale_fill_brewer(palette="BrBG")+
+  theme(legend.position="none", 
+        axis.title.y = element_text(face = 'bold', size = 22, vjust = 2.8),
+        axis.text.y = element_text(size = 18),
+        axis.text.x = element_text(size = 18),
+        axis.title.x = element_text(face = 'bold', size = 20),
+        #plot.title = element_text(face = 'bold', size = 16),
+        plot.margin = unit(c(0, 0, .1, 0.2), "cm")
+        )
+prov
+
+legend <- cowplot::get_legend(leg)
+#scale_x_discrete(limits=c("StronglyAgree", "Agree", "DontKnow","Disagree","StronglyDisagree"))
+
+survey_likert <- cowplot::plot_grid(cultural, reg, prov, legend, nrow = 4, align = "hv", axis = "lr", rel_heights = c(1, 1.2, 1.25, .25))
+survey_likert
+
+#ggsave(here("figures", 'main_figures', 'survey_likert.jpg'), height = 8, width = 12) 
+```
+
+## Arranged w/ Desired Traits
+```{r}
+plot_grid(survey_likert, traits.survey.plot,
+          ncol = 2, nrow = 1, rel_widths = c(1.05, 0.7), labels = c('a', 'b'), label_size = 28)
+ggsave(here("figures", 'main_figures', 'arranged_survey_figure.jpg'), height = 8, width = 17)
+```
+
+
+```{r}
+melted %>% 
+  filter(Item == "protect_or_shield_my_home_from_wildfire") %>% 
+  filter(variable == "Very High Importance" | 
+           variable == "High Importance") %>% 
+  mutate(importance_prop = sum(value))
+```
+
+```{r}
+melted %>% 
+ggplot(aes(x = variable, y = value, fill = category)) +
+         geom_col() +
+  theme_bw() +
+  scale_fill_brewer(palette = "PuBuGn") +
+  labs(y = "Cumulative Percentage", x = "Importance") +
+  theme(legend.position = "none", 
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+melted_means <- es_likert_cat %>% 
+  dplyr::select(category, mean_value) %>% 
+  reshape::melt()
+
+melted_means %>% 
+  ggplot(aes(y = value, x = category)) +
+  #geom_point(aes(color = category))+
+  # geom_boxplot(fill = NA, width = 0.2, outlier.color = NA, aes(color = category)) +
+  geom_boxplot(aes(fill = category)) +
+  scale_fill_brewer(palette="PuBuGn") +
+  theme(legend.position ="none") +
+  theme_bw() +
+  labs(y = "Combined Score (1-5)", 
+       x = "Category", 
+       title = "Importance of ES Categories")
+```
+
+```{r}
+melted_provisioning <- melted %>% 
+  filter(category == "provisioning")
+# %>% 
+#   group_by(Item) %>% 
+#   filter(variable == "Very High Importance") %>% 
+#   mutate(max_value = max(value))
+# 
+# new <- merge(melted, melted_provisioning)
+
+provisioning <- ggplot()+
+  geom_bar(data = melted_provisioning, aes(x = item_title, y=value, fill=variable), position="stack", stat="identity", show.legend = FALSE)+
+  coord_flip() + 
+  ggtitle("Provisioning")+
+  ylab("Percentage")+
+  xlab("Type")+
+  scale_fill_brewer(palette="YlOrRd") +
+  theme(legend.title = element_blank()) +
+  theme_bw()
+```
+
+```{r}
+melted_cult <- melted %>% 
+  filter(category == "cultural")
+
+cultural <- ggplot()+
+  geom_bar(data = melted_cult, aes(x = item_title, y= value, fill= variable), position="stack", stat="identity", show.legend = FALSE)+
+  coord_flip() + 
+  ggtitle("Cultural")+
+  ylab("Percentage")+
+  xlab("Type")+
+  scale_fill_brewer(palette="YlOrRd") +
+  theme(legend.title = element_blank()) +
+  theme_bw()
+cultural
+```
+
+```{r}
+melted_reg <- melted %>% 
+  filter(category == "regulating")
+
+regulating <- ggplot() +
+  geom_bar(data = melted_reg, aes(x = item_title, y=value, fill= variable), position="stack", stat="identity")+
+  coord_flip() + 
+  ggtitle("Regulating")+
+  ylab("Percentage")+
+  xlab("Type")+
+  scale_fill_brewer(palette="YlOrRd") +
+  theme(legend.position="bottom") +
+  theme()
+regulating
+```
+
+```{r}
+melted <- melted %>% 
+  mutate(Item = reorder(Item, category)) %>% 
+  mutate(Item = reorder(Item, value))
+
+ggplot()+
+  geom_bar(data = melted, aes(x = item_title, y = value, fill= variable), position="stack", stat="identity")+
+  coord_flip() + 
+  #ggtitle("Cultural")+
+  ylab("Percent")+
+  xlab("Service")+
+  scale_fill_brewer(palette="YlOrRd") +
+  theme(legend.position = "bottom") +
+  theme_bw() +
+  facet_wrap(~category, nrow = 3, scales = "free")
+```
+
+```{r}
+all <- # Create Flow timeseries plot that spans the grid by making one plot_grid
+#   and then nest it inside of a second. Also, include a title at the top
+#   for the whole figure.
+  
+title <- ggdraw() + draw_label("ES Categories and Valuation", fontface='bold')
+
+plot_grid(provisioning, cultural, regulating, nrow = 4, c("", "", ""),  rel_heights = c(1, 1, 1))
+
+```
+

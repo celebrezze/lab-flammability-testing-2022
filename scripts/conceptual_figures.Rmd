@@ -1,0 +1,423 @@
+---
+title: "Conceptual Figures"
+author: "Joe Celebrezze"
+date: "2023-09-15"
+output: html_document
+---
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(here)
+here = here::here
+library(tidyverse)
+library(ggsci) #for scale_color_lancet
+library(Ternary)
+library(gridGraphics)
+library(cowplot)
+
+group_by = dplyr::group_by
+summarise = dplyr::summarise
+plot_grid = cowplot::plot_grid
+
+flamm.df <- read.csv(here('data', 'processed-data', 'main_dataset.csv'))
+```
+
+```{r}
+flamm.df %>% 
+  dplyr::filter(ignition != 0) %>% 
+  drop_na(temp_change) %>% 
+  dplyr::group_by(species) %>% 
+  dplyr::select(species, fh, fd, temp_change, heat_flux_change, prop_ig, ignition) %>% 
+  dplyr::summarise(fh = mean(fh), fd = mean(fd), temp_change = mean(temp_change),
+            hfc = mean(heat_flux_change), prop_ig = mean(prop_ig))
+
+flamm.df %>% 
+  dplyr::group_by(species, ignition) %>% 
+  tally()
+```
+
+
+# Survey-Traits-Flammability
+First, to present idea to KF and MAM, going to just use subjective numbers (except for prop. ig.)
+Ignitability
+```{r}
+prop_ig_df <- flamm.df %>%
+  group_by(species) %>%
+  summarise(prop_ig = mean(prop_ig)) %>% 
+  mutate(prop_ig = prop_ig*2.25) # so maximum = 1
+```
+
+Dataframe
+```{r}
+spp <- c('ARTCAL', 'ARCDEN', 'CEAGRI', 'ERIKAR', 'HETARB', 'MALLAU', 'SALAPI', 'SALLEU')
+# flam.
+comb <- c(0.3, 0.5, 0.7, 0.1, 1, 0.9, 0.6, 0.5)
+ign <- c(0.321, 0, 0.375, 0.09, 0, 0.112, 1, 0.844)
+# survey
+drought <- c(1, 1, 1, 0.5, 1, 1, 1, 1)
+others <- c(0.5, 0.3, 0.6, 0.3, 0.5, 0.5, 0.8, 0.8)
+# traits
+morph <- c(1, 0.3, 0.9, 0.9, 0.4, 0.75, 0.6, 0.6)
+hyd <- c(0.5, 0.2, 0.8, 0, 0.8, 0.7, 0.6, 1)
+# colors
+color <- c('#ED0000B2', '#00468BB2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')
+
+triangle.df <- data.frame(spp, comb, ign, drought, others, morph, hyd, color) %>% 
+  mutate(flam = sqrt(comb^2 + ign^2)/1.1661904 + 0.1) %>% 
+  mutate(survey = sqrt(drought^2 + others^2)/1.2806248 + 0.1) %>% 
+  mutate(traits = sqrt(morph^2 + hyd^2)/1.2041595 + 0.1)
+```
+
+Plots
+```{r}
+par(mfrow = c(3, 3), mar = c(0.01, 0.01, 1, 0.01))
+for(i in 1:nrow(triangle.df)){
+TernaryPlot("Flammability", "Desirable Traits (Survey)", "Flam-Related Traits",
+            grid.lines = 0,
+            grid.minor.lines = 0,
+            col = triangle.df$color[i])
+
+title(triangle.df[i,1], cex.main = 1.5)
+
+# Add an arrow
+TernaryArrows(c(50, 50, 50), c(triangle.df[i,9], 0.1, 0.1), length = 0.14*triangle.df[i,9], lwd = 3*triangle.df[i,9], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.1, triangle.df[i,10], 0.1), length = 0.14*triangle.df[i,10], lwd = 3*triangle.df[i,10], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.1, 0.1, triangle.df[i,11]), length = 0.14*triangle.df[i,11], lwd = 3*triangle.df[i,11], col = "black")
+
+# Color background
+#cols <- TernaryPointValues(rgb, resolution = 100)
+#ColourTernary(cols, spectrum = NULL)
+}
+```
+
+# Combustibility-Ignitability-Survey/Traits
+Dataframe (making minimum = 0.1, maximum = 1.1 forr combustibility, ignitability)
+```{r}
+triangle2.df <- triangle.df %>% 
+  mutate(comb = comb + 0.1) %>% 
+  mutate(ign = ign + 0.1)
+```
+
+Survey Plot:
+```{r}
+par(mfrow = c(3, 3), mar = c(0.01, 0.01, 1, 0.01))
+for(i in 1:nrow(triangle2.df)){
+TernaryPlot("Combustibility", "Desirable Traits (Survey)", "Ignitability",
+            grid.lines = 0,
+            grid.minor.lines = 0,
+            col = triangle2.df$color[i])
+
+title(triangle2.df[i,1], cex.main = 1.5)
+
+# Add an arrow
+TernaryArrows(c(50, 50, 50), c(triangle2.df[i,2], 0.1, 0.1), length = 0.14*triangle2.df[i,2], lwd = 3*triangle2.df[i,2], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.1, triangle2.df[i,9], 0.1), length = 0.14*triangle2.df[i,10],lwd = 3*triangle2.df[i,10], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.1, 0.1, triangle2.df[i,3]), length = 0.14*triangle2.df[i,3], lwd = 3*triangle2.df[i,3], col = "black")}
+```
+
+Traits Plot:
+```{r}
+par(mfrow = c(3, 3), mar = c(0.01, 0.01, 1, 0.01))
+for(i in 1:nrow(triangle2.df)){
+TernaryPlot("Combustibility", "Flam-Related Traits", "Ignitability",
+            grid.lines = 0,
+            grid.minor.lines = 0,
+            col = triangle2.df$color[i])
+
+title(triangle2.df[i,1], cex.main = 1.5)
+
+# Add an arrow
+TernaryArrows(c(50, 50, 50), c(triangle2.df[i,2], 0.1, 0.1), length = 0.14*triangle2.df[i,2], lwd = 3*triangle2.df[i,2], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.1, triangle2.df[i,10], 0.1), length = 0.14*triangle2.df[i,11], lwd = 3*triangle2.df[i,11], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.1, 0.1, triangle2.df[i,3]), length = 0.14*triangle2.df[i,3], lwd = 3*triangle2.df[i,3], col = "black")}
+```
+
+# Combustibility vs. Ignitability
+```{r}
+ggplot(data = triangle.df, aes(x = comb, y = ign, color = spp)) +
+  geom_text(label = spp, size = 8, fontface = 'bold') +
+  labs(x = 'Combustibility', y = 'Ignitablity') +
+  theme_classic() +
+  coord_equal() +
+  scale_color_lancet() +
+  theme(legend.position = 'none',
+        axis.title = element_text(face = 'bold', size = 30),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+ggsave(here('figures', 'main_figures', 'conceptual.ig.vs.comb.png'), height = 16, width = 16)
+```
+
+# Fire Triangles
+Creating indices for each of the three axes (ignitability, combustibility, sustainablity)
+```{r}
+flamm.means <- flamm.df %>% 
+  drop_na(fh, fd, prop_ig, temp_change, heat_flux_change) %>% 
+  summarise(fh_mean = mean(fh), fh_sd = sd(fh),
+            fd_mean = mean(fd), fd_sd = sd(fd),
+            prop_ig_mean = mean(prop_ig), prop_ig_sd = sd(prop_ig),
+            temp_change_mean = mean(temp_change), temp_change_sd = sd(temp_change),
+            heat_flux_change_mean = mean(heat_flux_change), heat_flux_change_sd = sd(heat_flux_change))
+flamm.index <- flamm.df %>% 
+  drop_na(fh, fd, prop_ig, temp_change, heat_flux_change) %>% 
+  mutate(fh_scale = (fh - flamm.means$fh_mean[1])/flamm.means$fh_sd[1],
+         heat_flux_change_scale = (heat_flux_change - flamm.means$heat_flux_change_mean[1])/flamm.means$heat_flux_change_sd[1],
+         temp_change_scale = (temp_change - flamm.means$temp_change_mean[1])/flamm.means$temp_change_sd[1],
+         fd_scale = (fd - flamm.means$fd_mean[1])/flamm.means$fd_sd[1],
+         prop_ig_scale = (prop_ig - flamm.means$prop_ig_mean[1])/flamm.means$prop_ig_sd[1]) %>% 
+  group_by(species) %>% 
+  summarise(fh = mean(fh_scale), fd = mean(fd_scale), prop_ig = mean(prop_ig_scale),
+            temp_change = mean(temp_change_scale), heat_flux_change = mean(heat_flux_change_scale)) %>% 
+  mutate(ignitability = (prop_ig+1.250998)*0.34798, combustibility = (((fh + heat_flux_change + temp_change)/3) + 0.86017)*0.43157, sustainability = (fd + 0.744493)*0.662298) %>% 
+  dplyr::select(species, ignitability, combustibility, sustainability) %>% 
+  ungroup()
+
+# color
+flamm.index$color <- c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')
+
+# to calculate x and y values to make sure each of the three axes have values ranging from 0.03 to 1 so that below triangle plots work well. To calculate these, I did a system of equations where (min + x)*y = 0.03 and (max + x)*y = 1
+maximum <- 0.753267
+minimum <- -0.69956
+x <- (0.030928*maximum) - (1.030928*minimum)
+y <- 1/(1.03928*maximum-1.03928*minimum)
+```
+
+Plotting
+```{r}
+par(mfrow = c(3, 3), mar = c(0.01, 0.01, 1.3, 0.01))
+for(i in 1:nrow(flamm.index)){
+TernaryPlot("Ignitability", "Combustibility", "Sustainabilty",
+            grid.lines = 0,
+            grid.minor.lines = 0,
+            lab.cex = 2,
+            col = flamm.index$color[i])
+
+title(flamm.index[i,1], cex.main = 2)
+
+# Add an arrow
+TernaryArrows(c(50, 50, 50), c(flamm.index$ignitability[i], 0.03, 0.03), length = 0.2*flamm.index$ignitability[i], lwd = 5*flamm.index$ignitability[i], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.03, flamm.index$combustibility[i], 0.03), length = 0.2*flamm.index$combustibility[i], lwd = 5*flamm.index$combustibility[i], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.03, 0.03, flamm.index$sustainability[i]), length = 0.2*flamm.index$sustainability[i], lwd = 5*flamm.index$sustainability[i], col = "black")
+}
+```
+
+## REMEF Version (Max Models)
+```{r}
+conceptual_flam_remef <- read.csv(here('data', 'processed-data', 'conceptual_flam_remef.csv'))
+
+r.flamm.index <- conceptual_flam_remef %>% 
+  drop_na(r_fh, r_fd, prop_ig, r_temp_change, r_heat_flux_change) %>% 
+  group_by(species) %>% 
+  summarise(fh = mean(r_fh), fd = mean(r_fd), prop_ig = mean(prop_ig),
+            temp_change = mean(r_temp_change), heat_flux_change = mean(r_heat_flux_change)) %>% 
+  mutate(ignitability = (prop_ig+0.013746)*2.182502, combustibility = (((fh + heat_flux_change + temp_change)/3)+1.2)*0.35772, sustainability = (fd+0.855757)*0.962559) %>% 
+  dplyr::select(species, ignitability, combustibility, sustainability) %>% 
+  ungroup() %>% 
+  mutate(flam.score = (ignitability + combustibility + sustainability)/ 3)
+
+# color
+r.flamm.index$color <- c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')
+```
+
+Plotting
+```{r}
+par(mfrow = c(3, 3), mar = c(0, 0, 1, 0.01))
+for(i in 1:nrow(r.flamm.index)){
+TernaryPlot("Ignitability", "Combustibility", "Sustainabilty",
+            grid.lines = 0,
+            grid.minor.lines = 0,
+            lab.cex = 1.5,
+            bg = 'transparent',
+            col = r.flamm.index$color[i])
+
+title(r.flamm.index[i,1], cex.main = 1.75)
+
+# Add an arrow
+TernaryArrows(c(50, 50, 50), c(r.flamm.index$ignitability[i], 0.03, 0.03), length = 0.2*r.flamm.index$ignitability[i], lwd = 5*r.flamm.index$ignitability[i], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.03, r.flamm.index$combustibility[i], 0.03), length = 0.2*r.flamm.index$combustibility[i], lwd = 5*r.flamm.index$combustibility[i], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.03, 0.03, r.flamm.index$sustainability[i]), length = 0.2*r.flamm.index$sustainability[i], lwd = 5*r.flamm.index$sustainability[i], col = "black")
+}
+flam.triangles.max <- recordPlot()
+```
+
+## REMEF Version (Top Models)
+```{r}
+interspecific_flam_remef <- read.csv(here('data', 'processed-data', 'interspecific_flam_remef.csv'))
+
+r.flam.index.top <- interspecific_flam_remef %>% 
+  drop_na(r_fh, r_fd, prop_ig, r_temp_change, r_heat_flux_change) %>% 
+  group_by(species) %>% 
+  summarise(fh = mean(r_fh), fd = mean(r_fd), prop_ig = mean(prop_ig),
+            temp_change = mean(r_temp_change), heat_flux_change = mean(r_heat_flux_change)) %>% 
+  mutate(fh = scale(fh), fd = scale(fd), prop_ig = scale(prop_ig),
+            temp_change = scale(temp_change), heat_flux_change = scale(heat_flux_change))
+
+min_fh <- min(r.flam.index.top$fh)
+min_fd <- min(r.flam.index.top$fd)
+min_pi <- min(r.flam.index.top$prop_ig)
+min_temp <- min(r.flam.index.top$temp_change)
+min_hf <- min(r.flam.index.top$heat_flux_change)
+
+r.flamm.index.top <- r.flam.index.top %>% # so that minimum possible value is 0, subtracting minimum from each flam. metric
+  mutate(fh = fh - min_fh,
+         fd = fd - min_fd,
+         prop_ig = prop_ig - min_pi,
+         temp_change = temp_change - min_temp,
+         heat_flux_change = heat_flux_change - min_hf)%>% 
+  mutate(ignitability = prop_ig, combustibility = (fh + heat_flux_change + temp_change)/3, sustainability = fd) %>% 
+  dplyr::select(species, ignitability, combustibility, sustainability) %>% 
+  ungroup() %>% 
+  mutate(flam.score = (ignitability + combustibility + sustainability)/ 3)
+
+# color
+r.flamm.index.top$color <- c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')
+```
+
+Plotting
+```{r}
+par(mfrow = c(3, 3), mar = c(0, 0, 2, 0.01))
+for(i in 1:nrow(r.flamm.index.top)){
+TernaryPlot("Ign.", "Com.", "Sus.",
+            grid.lines = 0,
+            grid.minor.lines = 0,
+            lab.cex = 3.1,
+            bg = 'transparent',
+            col = r.flamm.index.top$color[i])
+
+title(r.flamm.index.top[i,1], cex.main = 3)
+
+# Add an arrow
+TernaryArrows(c(50, 50, 50), c(r.flamm.index.top$ignitability[i], 0.15, 0.15), length = 0.1*r.flamm.index.top$ignitability[i], lwd = 2.3*r.flamm.index.top$ignitability[i], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.15, r.flamm.index.top$combustibility[i], 0.15), length = 0.1*r.flamm.index.top$combustibility[i], lwd = 2.3*r.flamm.index.top$combustibility[i], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.15, 0.15, r.flamm.index.top$sustainability[i]), length = 0.1*r.flamm.index.top$sustainability[i], lwd = 2.3*r.flamm.index.top$sustainability[i], col = "black")
+}
+flam.triangles <- recordPlot()
+```
+
+## For Graphical Abstract (Two Triangles)
+```{r}
+par(mfrow = c(1, 2), mar = c(0, 0, 1, 0.01))
+for(i in c(4,8)){
+TernaryPlot("Ignitability", "Combustibility", "Sustainabilty",
+            grid.lines = 0,
+            grid.minor.lines = 0,
+            lab.cex = 1.5,
+            bg = 'transparent',
+            col = r.flamm.index$color[i])
+
+# Add an arrow
+TernaryArrows(c(50, 50, 50), c(r.flamm.index.top$ignitability[i], 0.15, 0.15), length = 0.1*r.flamm.index.top$ignitability[i], lwd = 2*r.flamm.index.top$ignitability[i], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.15, r.flamm.index.top$combustibility[i], 0.15), length = 0.1*r.flamm.index.top$combustibility[i], lwd = 2*r.flamm.index.top$combustibility[i], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.15, 0.15, r.flamm.index.top$sustainability[i]), length = 0.1*r.flamm.index.top$sustainability[i], lwd = 2*r.flamm.index.top$sustainability[i], col = "black")
+}
+flam.triangles.graphical <- recordPlot()
+```
+
+# Flam. vs. Desirable Traits (Scores)
+```{r}
+# calculating desirable traits scores
+flam_EScores_subscores <- data.frame(
+  Species = c('ARTCAL', 'ARCDEN', 'CEAGRI', 'ERIKAR', 'HETARB', 'MALLAU', 'SALAPI', 'SALLEU'),
+  drought =  c(3.33, 3.5, 3.33, 3, 3.5, 3.6, 3.5, 3.5),
+  edible =   c(2.5, 2, 1.33, 2.4, 2.166, 2, 2.5, 2.33),
+  flowers =  c(3.33, 2.0833, 3.5, 3.4, 2.9166, 2.7, 3.33, 3.5833),
+  fragrant = c(2.833, 4, 2.833, 1.8, 2.33, 2.8, 4, 4),
+  wildlife = c(3.5, 3.5, 3.33, 1.8, 3.666, 3.6, 3.333, 3.333),
+  erosion = c(3.833, 4, 4, 2.6, 4, 4, 3.833, 3.833),
+  flowers.aes = c(3.33, 2.166, 3.66, 4, 2.66, 2.6, 3.5, 3.833),
+  flowers.pol = c(3.33, 2, 3.33, 2.8, 3.166, 2.8, 3.166, 3.33)
+) 
+
+flam_EScores_subscores$ES.score <- (0.556*flam_EScores_subscores$drought + 0.222*flam_EScores_subscores$edible + 0.074*flam_EScores_subscores$flowers + 0.037*flam_EScores_subscores$fragrant + 0.111*flam_EScores_subscores$wildlife) / 5
+
+# flam scores
+r.flamm.index2 <- conceptual_flam_remef %>% 
+  drop_na(r_fh, r_fd, prop_ig, r_temp_change, r_heat_flux_change) %>% 
+  group_by(species) %>% 
+  summarise(fh = mean(r_fh), fd = mean(r_fd), prop_ig = mean(prop_ig),
+            temp_change = mean(r_temp_change), heat_flux_change = mean(r_heat_flux_change)) %>% 
+  mutate(ignitability = prop_ig, combustibility = ((fh + heat_flux_change + temp_change)/3), sustainability = fd) %>% 
+  #dplyr::select(species, ignitability, combustibility, sustainability) %>% 
+  ungroup() %>% 
+  mutate(flam.score = (ignitability + combustibility + sustainability)/ 3)
+
+# scores DF
+flam_scores <- data.frame(
+  species = flam_EScores_subscores$Species,
+  flam.score = r.flamm.index.top$flam.score,
+  es.score = flam_EScores_subscores$ES.score
+)
+
+# scale again
+flam_scores <- flam_scores %>% 
+  mutate(flam.score = scale(flam.score), es.score = scale(es.score))
+```
+
+## Visualization (Max Model REMEF)
+```{r}
+# 'ARTCAL', 'ARCDEN', 'CEAGRI', 'ERIKAR', 'HETARB', 'MALLAU', 'SALAPI', 'SALLEU'
+
+# non-scaled version
+#flam_scores$labx <- c(0.6890, 0.61, 0.65, 0.58, 0.6964, 0.3778, 0.6816, 0.75, 0.735)
+#flam_scores$laby <- c(0.01705280, 0.02416551, 0.37, -0.12, 0.75, -0.06139702, -0.10381904,  0.035, 0.31915402)
+
+# scaled version
+flam_scores$labx <- c(0.37, -0.35, -1.06, -1.92, 0.31, 0.38, 0.75, 0.55)
+flam_scores$laby <- c(-0.42, -0.35, 1.34, -1.22, 0.98, -0.99, -0.35, 1.18)
+
+es.vs.flam.max <- ggplot(data=flam_scores) +
+  geom_point(aes(x=es.score, y=flam.score, color=species), size=8.5, alpha=0.75) + 
+  geom_text(vjust=0, hjust=-0.15, aes(x=labx, y=laby, label=species), fontface = 'bold', size = 8) +
+  labs(x = 'Desirable Traits', y = 'Flammability') +
+  scale_color_manual(values = c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')) +
+  theme_bw() +
+  theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 22),
+          #axis.text = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text = element_text(size = 18))
+es.vs.flam.max
+```
+
+## Visualization (Top Model REMEF)
+```{r}
+# Visualization
+# 'ARTCAL', 'ARCDEN', 'CEAGRI', 'ERIKAR', 'HETARB', 'MALLAU', 'SALAPI', 'SALLEU'
+flam_scores$labx <- c(0.06, -0.31, -1.4, -2.1, 0.32, 0.38, 0.73, 0.57)
+flam_scores$laby <- c(0.02, -0.4, 1.38, -1.32, -0.65, -0.33, 0.13, 1.8)
+
+es.vs.flam <- ggplot(data=flam_scores) +
+  geom_point(aes(x=es.score, y=flam.score, color=species), size=12, alpha=0.75) + 
+  geom_text(vjust=0, hjust=-0.15, aes(x=labx, y=laby, label=species), fontface = 'bold', size = 12) +
+  annotate(geom = 'segment', x = -1.6, xend = 1.05, y = -2, yend = -2, linewidth = 2,
+           arrow = arrow(ends = 'both', angle = 20), color = 'gray60') + # desirability score arrow
+  annotate('text', x = 1.27, y = -2, label = 'More \nDesirable', size = 7,
+           fontface = 'bold', color = 'gray60') +
+  annotate('text', x = -1.82, y = -2, label = 'Less \nDesirable', size = 7,
+           fontface = 'bold', color = 'gray60') +
+  annotate(geom = 'segment', x = -2.2, xend = -2.2, y = -1.35, yend = 1.75, linewidth = 2,
+           arrow = arrow(ends = 'both', angle = 20), color = 'gray60') + # flammability score arrow
+  annotate('text', x = -2.18, y = 1.97, label = 'More \nFlammable', size = 7,
+           fontface = 'bold', color = 'gray60') +
+  annotate('text', x = -2.18, y = -1.57, label = 'Less \nFlammable', size = 7,
+           fontface = 'bold', color = 'gray60') +
+  labs(x = 'Desirable Traits Score', y = 'Flammability Score') +
+  scale_color_manual(values = c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')) +
+  theme_bw() +
+  scale_y_continuous(limits = c(-2, 2)) +
+  scale_x_continuous(limits = c(-2.22, 1.3)) +
+  theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 36),
+          axis.text = element_blank(),
+          axis.ticks = element_blank(),
+          panel.grid = element_blank())
+          #axis.text = element_text(size = 22))
+es.vs.flam
+```
+
+# Arranged Main Figure
+```{r}
+plot_grid(es.vs.flam, flam.triangles, labels = c('a', 'b'), nrow = 1, rel_widths = c(3, 2), label_size = 50, greedy = F)
+ggsave(file = here('figures', 'main_figures', 'conceptual_plot.png'), height = 10, width = 25)
+```
+

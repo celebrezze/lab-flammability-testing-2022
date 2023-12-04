@@ -1,0 +1,1809 @@
+---
+title: 'Clean Mixed Effects Model Selection: AIC, BIC, Mallows CP'
+author: "Joe Celebrezze"
+date: "2023-07-14"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# packages
+library(tidyverse)
+library(here)
+#library(lubridate)
+#library(ggfortify)
+library(ggpubr)
+library(sjPlot) # for tab_model
+library(psych) #for pairs.panels()
+library(GGally) # For ggcorr()
+library(scales)
+library(lme4) # for lmer
+#library(lmerTest) # to try stepwise selection
+library(remef) # for remef
+library(performance) # for multicollinearity check
+library(car) # for qqPlot
+library(gtools) # for combination()
+library(kableExtra) # to make nice tables
+library(glmmLasso) # specific to running lasso on generalized linear mixed models
+library(glmnet) # 'best' package for running lasso on generalized linear models; also, has good function for cross-validation process
+
+# defining functions
+here = here::here
+ggbiplot = ggbiplot::ggbiplot
+select = dplyr::select
+source(here('scripts', 'mem.selection.function.R')) #this is where mem.selection(), mem.selection.table() and mallows.cp() functions are stored
+
+# reading in data
+flamm.df <- read.csv(here('data', 'processed-data', 'main_dataset.csv'))
+```
+
+# Data Structure
+
+For the linear mixed effects models, we are going to be using the *flammability metrics* below as **dependent variables**:
+
+- Flame height (fh)
+- Flame duration (fd)
+- Change in temp. (temp_change)
+- Change in heat flux (heat_flux_change)
+
+The following variables are not going to be considered (with the reasoning behind omitting each one described below):
+
+- Time to ignition (tti): because this variable is conceptually meaningless for all manual ignitions (the majority of ignitions)
+- Post-flame glow (pfg): because we do not necessarily trust the glow end time, as it was challenging to see in video playbacks when the sample stopped glowing. Because of this drawback, we relied on the people present during the flammability lab testing to clap at the end of the glow time, but the timing of this clap did not always correspond with the exact end of glowing
+- Proportion ignited (prop_ig): because this variable has only one value for each species which does not fit the structure of the models
+
+We have a plethora of variables that could be used as predictors and also a lot of potential covariates. The potential **predictors** are grouped and listed below:
+
+*Species*: This will likely be included in every model, as understanding interspecific differences and grouping species by flammability is our central question
+
+*Hydration or dryness*:
+- LFM (can be total LFM, leaf LFM and/or stem LFM)
+- Water potential (mpa)
+- Wet weight (ww_flam_sample)* (note that this was determined to be more reminiscent of sample weight than wetness, so may not be included in the model selection)
+- Dry weight (dw_flam_sample)* (note that this was determined to be more reminiscent of sample weight than dryness, so may not be included in the model selection)
+
+*Leaf morphology*:
+- LMA or SLA
+- Leaf area (likely unnecessary, as described by LMA and SLA in some capacity)
+- Leaf thickness
+
+*Sample morphology*:
+- Branching
+- Sample density
+- Branch height
+- Stem to leaf ratio
+- Sample weight* (note: this could also be considered a covariate)
+
+Potential **covariates**:
+
+- Starting temperature (start_temp)
+- Sample weight* (see note above)
+- Sample volume (branch_volume): could also split by height, width and length (although length is mostly the same across samples)
+- Ambient humidity or temperature (note: I don't necessarily trust that the meter was doing a good job gathering this data, as it seems like the temperature of the chamber affected the measurements)
+- Thermocoupler and hot plate height: probably not necessary, as exploratory analyses showed that there weren't any major differences between variables depending on the thermocoupler height or hot plate height
+
+**Random effect**:
+
+- Plant (to account for repeated measurements): note that we will need to make a unique identifier for each plant by combining current columns 'species' and 'plant'. Otherwise, the model will assume that (for example) plant 1 is the same group, treating HETARB 1 and SALLEU 1 as similar when they should not be treated as similar
+
+Looking at the above variables to see how they're situated in the dataset
+```{r}
+flamm.df %>% 
+  summarise(sw = mean(sample_wt), sw.sd = sd(sample_wt))
+
+# Grouping by plant_id; to check to see which traits do not have any variation per plant_id
+trait.summary.plant_id <- flamm.df %>%  
+  unite('plant_id', c(species, plant), sep = '_', remove = F) %>% 
+  select(fh, species, lfm, leaf_lfm, stem_lfm, mpa, ww_flam_sample, dw_flam_sample, LMA, SLA, thickness, leaf_area, branching, stem_mass_ratio, leaf_mass_ratio, sample_wt, start_temp, branch_volume, branch_height, sample_density, ambient_humidity, ambient_temp, thermocoupler_height, hotplate_height, plant_id) %>% 
+  mutate(lfm = scale(lfm), mpa = scale(mpa), ww_flam_sample = scale(ww_flam_sample),
+         dw_flam_sample = scale(dw_flam_sample), LMA = scale(LMA), thickness = scale(thickness),
+         leaf_area = scale(leaf_area), branching = scale(branching),
+         leaf_mass_ratio = scale(leaf_mass_ratio), sample_wt = scale(sample_wt),
+         start_temp = scale(start_temp), branch_volume = scale(branch_volume),
+         sample_density = scale(sample_density), branch_height = scale(branch_height)) %>%  # scaling traits we want to look at so that standard deviations are comparable
+  group_by(plant_id) %>% 
+  dplyr::summarise(sd_lfm = sd(lfm), sd_mpa = sd(mpa), sd_ww = sd(ww_flam_sample), sd_dw = sd(dw_flam_sample),
+                   sd_lma = sd(LMA), sd_thickness = sd(thickness), sd_leafarea = sd(leaf_area),
+                   sd_branching = sd(branching), sd_leafratio = sd(leaf_mass_ratio), sd_sw = sd(sample_wt),
+                   sd_st = sd(start_temp), sd_volume = sd(branch_volume),
+                   sd_density = sd(sample_density), sd_bh = sd(branch_height))
+trait.summary.plant_id %>% 
+  mutate(sd_lfm = ifelse(is.na(sd_lfm), 0, sd_lfm),
+         sd_mpa = ifelse(is.na(sd_mpa), 0, sd_mpa),
+         sd_ww = ifelse(is.na(sd_ww), 0, sd_ww),
+         sd_dw = ifelse(is.na(sd_dw), 0, sd_dw),
+         sd_lma = ifelse(is.na(sd_lma), 0, sd_lma),
+         sd_thickness = ifelse(is.na(sd_thickness), 0, sd_thickness),
+         sd_leafarea = ifelse(is.na(sd_leafarea), 0, sd_leafarea),
+         sd_branching = ifelse(is.na(sd_branching), 0, sd_branching),
+         sd_leafratio = ifelse(is.na(sd_leafratio), 0, sd_leafratio),
+         sd_sw = ifelse(is.na(sd_sw), 0, sd_sw),
+         sd_st = ifelse(is.na(sd_st), 0, sd_st), 
+         sd_volume = ifelse(is.na(sd_volume), 0, sd_volume),
+         sd_density = ifelse(is.na(sd_density), 0, sd_density),
+         sd_bh = ifelse(is.na(sd_bh), 0, sd_bh)) %>% 
+  summary()
+
+# Grouping by species; to check to see which traits do not have any intraspecific variation
+trait.summary.species <- flamm.df %>%  # scaling so that standard deviations are comparable
+  select(fh, species, lfm, leaf_lfm, stem_lfm, mpa, ww_flam_sample, dw_flam_sample, LMA, SLA, thickness, leaf_area, branching, stem_mass_ratio, leaf_mass_ratio, sample_wt, start_temp, branch_volume, sample_density, ambient_humidity, ambient_temp, thermocoupler_height, hotplate_height) %>% 
+  mutate(lfm = scale(lfm), mpa = scale(mpa), ww_flam_sample = scale(ww_flam_sample),
+         dw_flam_sample = scale(dw_flam_sample), LMA = scale(LMA), thickness = scale(thickness),
+         leaf_area = scale(leaf_area), branching = scale(branching),
+         leaf_mass_ratio = scale(leaf_mass_ratio), sample_wt = scale(sample_wt),
+         start_temp = scale(start_temp), branch_volume = scale(branch_volume),
+         sample_density = scale(sample_density)) %>%  # scaling traits we want to look at so that standard deviations are comparable
+  group_by(species) %>% 
+  dplyr::summarise(sd_lfm = sd(lfm), sd_mpa = sd(mpa), sd_ww = sd(ww_flam_sample), sd_dw = sd(dw_flam_sample),
+                   sd_lma = sd(LMA), sd_thickness = sd(thickness), sd_leafarea = sd(leaf_area),
+                   sd_branching = sd(branching), sd_leafratio = sd(leaf_mass_ratio), sd_sw = sd(sample_wt),
+                   sd_st = sd(start_temp), sd_volume = sd(branch_volume),
+                   sd_density = sd(sample_density))
+trait.summary.species %>% 
+  mutate(sd_lfm = ifelse(is.na(sd_lfm), 0, sd_lfm),
+         sd_mpa = ifelse(is.na(sd_mpa), 0, sd_mpa),
+         sd_ww = ifelse(is.na(sd_ww), 0, sd_ww),
+         sd_dw = ifelse(is.na(sd_dw), 0, sd_dw),
+         sd_lma = ifelse(is.na(sd_lma), 0, sd_lma),
+         sd_thickness = ifelse(is.na(sd_thickness), 0, sd_thickness),
+         sd_leafarea = ifelse(is.na(sd_leafarea), 0, sd_leafarea),
+         sd_branching = ifelse(is.na(sd_branching), 0, sd_branching),
+         sd_leafratio = ifelse(is.na(sd_leafratio), 0, sd_leafratio),
+         sd_sw = ifelse(is.na(sd_sw), 0, sd_sw),
+         sd_st = ifelse(is.na(sd_st), 0, sd_st), 
+         sd_volume = ifelse(is.na(sd_volume), 0, sd_volume),
+         sd_density = ifelse(is.na(sd_density), 0, sd_density)) %>% 
+  summary()
+```
+
+The following plant traits are measured for each plant_id (sd = 0 for plant_id):
+LFM/stem LFM/leaf LFM, LMA/SLA, thickness, leaf area, leaf ratio/stem ratio
+
+vs. the following traits which have unique values for each plant_id:
+MPa, wet weight/dry weight (note: LFM used in calculation), branching, sample weight, starting temp., sample volume
+
+# Initial Collinearity Check
+Because we have so many variables, we should look at a correlation matrix to determine which variables to include and which ones we could get rid of right away
+```{r}
+flamm.df <- flamm.df %>% 
+  drop_na(fh, fd, pfg, temp_change, heat_flux_change) # dropping any NA's for flam. metrics
+
+flamm.df %>% 
+  select(fh, fd, pfg, temp_change, heat_flux_change, species, lfm, leaf_lfm, stem_lfm, mpa, ww_flam_sample, dw_flam_sample, LMA, SLA, thickness, leaf_area, branching, stem_mass_ratio, leaf_mass_ratio, sample_wt, start_temp, branch_volume, sample_density, ambient_humidity, ambient_temp, branch_height, thermocoupler_height, hotplate_height, stem_sav, leaf_sav, stem_dmc, dmc, leaf_dmc, dw_sppdev) %>% 
+  ggcorr(label = T)
+```
+
+From the above correlation matrix, there are some initial 'problem areas':
+- Sample weight and dw_flam_sample and ww_flam_sample: makes sense since sample weight was used in the calculation of these variables
+- Branch volume/branch height and sample weight, dw_flam_sample, ww_flam_sample: all describe bulkiness, size of sample in some way
+- LMA and SLA: duh
+- Leaf mass ratio and stem mass ratio: also, duh
+- Stem LFM and LFM
+- Leaf area and dw_flam_sample and ww_flam_sample: more of a surprising one to me, but makes sense conceptually
+- Stem LFM and Stem dmc
+- LFM and DMC
+
+So, we will eliminate some variables from contention right away:
+- SLA: we can use LMA
+- Stem mass ratio: we can use leaf mass ratio
+- Stem LFM and leaf LFM: unless we notice something in the EDA that suggests otherwise, I think using total LFM makes sense
+
+- Wet weight and dry weight: although these were initially thought to be important variables based on previous studies looking at tissue-level flammability, a first pass of the MEM selection showed that the sample weight component of either of these metrics was far outweighing the 'wetness' or 'dryness' component of them represented by LFM. We believe that leaving them in can be misleading to people as wet weight signifies that an increase means an increased hydration, when in many cases, it just meant an increase in weight
+
+- Leaf area: because leaf area is included in some fashion in the calculation of LMA and due to it's oddly strong correlation to dw_flam_sample and ww_flam_sample which we're interested in keeping in the models, it makes sense to remove
+
+We can also eliminate ambient temp and humidity since they show absolutely no correlation with flame height (and very little correlation with most variables)
+
+# Model Selection 1: AIC, BIC
+For the first model selection, going to use AIC, BIC, Mallows' CP and use the simple random effects structure (1|plant_id)
+
+For the mem.selection() function, note the following things:
+y.var must be character vector for flam. variable of interest
+predictors must be dataframe w/ only predictors
+df must be dataframe w/ all values
+rem.str must be character vector; default is simple (1|plant_id)
+the output is a list of 2 elements, the first being a dataframe with AIC, BIC, Mallows cp values and the second being a list of the mixed effects models described in the dataframe
+
+For the mem.selection.table() function, note the following things:
+df must be a the model.df output from mem.selection
+mod.list must be the mod.list output from mem.selection
+output is the name of the .html file you wish to save in the 'MEM' folder of figures
+This function serves a dual purpose, to save a kable table in the figures and to store a dataframe of the top models in the local environment for future use (e.g., coefficients table)
+
+## Data Wrangling
+For main dataset (mem.df):
+- Remove non-ignitions
+- Add plant_id variable
+- Select all potentially 'interesting' variables
+- Scale and center them all
+- Remove NA's
+- Remove ARCDEN and HETARB from the analysis; after removing the above, each of these species had very few datapoints (n = 2 for HETARB, n = 8 for ARCDEN) and the random effects had only 1 datapoint in each category (plant_id) for both plants of HETARB and for 3/4 plants for ARCDEN
+
+For predictors dataset:
+- Use wrangled dataset, mem.df
+- Select predictors we're interested in including in the mixed effects model selection
+```{r}
+mem.df <- flamm.df %>% 
+  filter(ignition != '0') %>% 
+  filter(species != 'ARCDEN', species != 'HETARB') %>% 
+  unite('plant_id', c(species, plant), sep = '_', remove = F) %>% 
+  select(species, thickness, lfm, leaf_area, LMA, sample_wt, leaf_mass_ratio, branching, mpa,
+         ignition, fh, fd, temp_change, heat_flux_change, prop_ig, dw_flam_sample,
+         ww_flam_sample, sample_density, branch_volume, start_temp, leaf_area, branch_height,
+         stem_dmc, leaf_dmc, dmc, stem_sav, leaf_sav, dw_sppdev, plant_id) %>% 
+  mutate(lfm = scale(lfm), mpa = scale(mpa), ww_flam_sample = scale(ww_flam_sample),
+         dw_flam_sample = scale(dw_flam_sample), sample_density = scale(sample_density),
+         LMA = scale(LMA), thickness = scale(thickness),
+         leaf_area = scale(leaf_area), branching = scale(branching),
+         leaf_mass_ratio = scale(leaf_mass_ratio), sample_wt = scale(sample_wt),
+         start_temp = scale(start_temp), branch_volume = scale(branch_volume),
+         fh = scale(fh), fd = scale(fd),
+         temp_change = scale(temp_change), heat_flux_change = scale(heat_flux_change),
+         leaf_area = scale(leaf_area), branch_height = scale(branch_height),
+         stem_dmc = scale(stem_dmc), leaf_dmc = scale(leaf_dmc), dmc = scale(dmc),
+         stem_sav = scale(stem_sav), leaf_sav= scale(leaf_sav), dw_sppdev= scale(dw_sppdev)) %>% 
+  drop_na(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_area, leaf_sav, thickness, species)
+
+mem.predictors.df <- mem.df %>% 
+  select(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness, species) # fourteen predictors (note: no ww or dw); removed  thickness, leaf_area, sample_density, branch_volume, and branch_height from initial consideration as more than 14 predictors starts to make the model selection process take a really long time or cause the R session to abort
+
+mem.df %>% 
+  dplyr::group_by(plant_id) %>%
+  tally()
+```
+
+## Flame Height
+```{r}
+fh.mem.selection <- mem.selection('fh', mem.predictors.df, mem.df)
+fh.model.df <- fh.mem.selection[[1]] %>% 
+  mutate(ABIC = AIC + BIC)
+fh.mod.list <- fh.mem.selection[[2]]
+fh.top.mem <- mem.selection.table(fh.model.df, fh.mod.list, 'FH_MEM.html') %>% 
+  mutate(flam.var = 'fh')
+```
+
+## Flame Duration
+```{r}
+fd.mem.selection <- mem.selection('fd', mem.predictors.df, mem.df)
+fd.model.df <- fd.mem.selection[[1]] %>% 
+  mutate(ABIC = AIC + BIC)
+fd.mod.list <- fd.mem.selection[[2]]
+fd.top.mem <- mem.selection.table(fd.model.df, fd.mod.list, 'FD_MEM.html') %>% 
+  mutate(flam.var = 'fd')
+```
+
+## Temp. Change
+```{r}
+temp.mem.selection <- mem.selection('temp_change', mem.predictors.df, mem.df)
+temp.model.df <- temp.mem.selection[[1]] %>% 
+  mutate(ABIC = AIC + BIC)
+temp.mod.list <- temp.mem.selection[[2]]
+temp.top.mem <- mem.selection.table(temp.model.df, temp.mod.list, 'TempChange_MEM.html') %>% 
+  mutate(flam.var = 'temp_change')
+```
+
+## Heat Flux Change
+```{r}
+hf.mem.selection <- mem.selection('heat_flux_change', mem.predictors.df, mem.df)
+hf.model.df <- hf.mem.selection[[1]] %>% 
+  mutate(ABIC = AIC + BIC)
+hf.mod.list <- hf.mem.selection[[2]]
+hf.top.mem <- mem.selection.table(hf.model.df, hf.mod.list, 'HFChange_MEM.html') %>% 
+  mutate(flam.var = 'heat_flux_change')
+```
+
+From here, the information-criteria-based model selection should be further scrutinized to see which variables we should test in univariate models and which predictors we should include in LASSO selection and to see if there are any variables we could remove from the selection altogether
+
+## Testing Univariate Models
+Due to the way the function above was written, every MEM had to have at least 2 predictors; however, what if the flam. metrics are better predicted by 1 predictor? The below chunk looks at each of the top predictors in 'singular' models to answer this question
+
+### Model Performance Function (AIC, BIC, Nakagawa's R2 values)
+```{r}
+mem.performance <- function(model){
+  aic <- AIC(model)
+  bic <- BIC(model)
+  cond.r2 <- r2_nakagawa(model)[[1]]
+  marg.r2 <- r2_nakagawa(model)[[2]]
+  print(paste('AIC =', aic, 'BIC =', bic, 'Cond. Rsq =', cond.r2, 'Marg. Rsq =', marg.r2))
+}
+```
+
+### Models
+```{r}
+# Flame Height
+fh.sw <- lmer(fh ~ sample_wt + (1|plant_id), mem.df)
+mem.performance(fh.sw) # sig. worse than top models
+fh.br <- lmer(fh ~ branching + (1|plant_id), mem.df)
+mem.performance(fh.br) # sig. worse than top models
+fh.mpa <- lmer(fh ~ mpa + (1|plant_id), mem.df)
+mem.performance(fh.mpa) # sig. worse than top models
+fh.ssav <- lmer(fh ~ stem_sav + (1|plant_id), mem.df)
+mem.performance(fh.ssav) # sig. worse than top models
+
+# Flame Duration
+fd.sw <- lmer(fd ~ sample_wt + (1|plant_id), mem.df)
+mem.performance(fd.sw) # sig. worse than top models
+fd.br <- lmer(fd ~ branching + (1|plant_id), mem.df)
+mem.performance(fd.br) # sig. worse than top models
+fd.dmc <- lmer(fd ~ dmc + (1|plant_id), mem.df)
+mem.performance(fd.dmc) # sig. worse than top models
+fd.lmr <- lmer(fd ~ leaf_mass_ratio + (1|plant_id), mem.df)
+mem.performance(fd.lmr) # sig. worse than top models
+
+# Temp Change
+temp.sw <- lmer(temp_change ~ sample_wt + (1|plant_id), mem.df)
+mem.performance(temp.sw) # sig. worse than top models
+temp.br <- lmer(temp_change ~ branching + (1|plant_id), mem.df)
+mem.performance(temp.br) # sig. worse than top models
+temp.lfm <- lmer(temp_change ~ lfm + (1|plant_id), mem.df)
+mem.performance(temp.lfm) # sig. worse than top models
+temp.st <- lmer(temp_change ~ start_temp + (1|plant_id), mem.df)
+mem.performance(temp.st) # sig. worse than top models
+temp.la <- lmer(temp_change ~ leaf_area + (1|plant_id), mem.df)
+mem.performance(temp.la) # sig. worse than top models
+
+# Heat Flux
+hf.sw <- lmer(heat_flux_change ~ sample_wt + (1|plant_id), mem.df)
+mem.performance(hf.sw) # similar to top models
+hf.lmr <- lmer(heat_flux_change ~ leaf_mass_ratio + (1|plant_id), mem.df)
+mem.performance(hf.lmr) # sig. worse than top models
+hf.sav <- lmer(heat_flux_change ~ leaf_sav + (1|plant_id), mem.df)
+mem.performance(hf.sav) # sig. worse than top models
+hf.lma <- lmer(heat_flux_change ~ LMA + (1|plant_id), mem.df)
+mem.performance(hf.lma) # sig. worse than top models
+```
+
+## Coefficients Table
+Although the above tables can be helpful for mem selection, they do not provide any information about coefficients or significance of variables; below, using tab_model, we'll do just that
+```{r}
+top.mem <- rbind(fh.top.mem, fd.top.mem, temp.top.mem, hf.top.mem)
+top.mem.list <- list()
+for(i in 1:nrow(top.mem)){
+  if(top.mem$flam.var[i] == 'fh'){
+    top.mem.list[[i]] <- fh.mod.list[[top.mem$model.id[i]]]
+  } else if(top.mem$flam.var[i] == 'fd'){
+    top.mem.list[[i]] <- fd.mod.list[[top.mem$model.id[i]]]
+  } else if(top.mem$flam.var[i] == 'temp_change'){
+    top.mem.list[[i]] <- temp.mod.list[[top.mem$model.id[i]]]
+  } else if(top.mem$flam.var[i] == 'heat_flux_change'){
+    top.mem.list[[i]] <- hf.mod.list[[top.mem$model.id[i]]]
+  }
+}
+
+tab_model(top.mem.list,
+          show.reflvl = TRUE, 
+          digits = 3, 
+          show.aic = TRUE, 
+          show.ci = FALSE,
+          show.icc = FALSE, 
+          string.pred = "Coeffcient", 
+         title = "MEM Selection: Coefficients, Significance for Top Models",
+  string.p = "P-Value", 
+  p.style = "stars",
+  file = here('figures', 'MEM', 'Top_MEM_Coef.html'))
+```
+
+# Model Selection 2: LASSO
+The LASSO technique is used for model selection to help us understand instances where the information criteria does not lead to solid conclusions
+
+## Flame Height
+### Lambda Cross-validation 
+from https://davidabugaber.com/blog/f/find-the-optimal-mixed-model-for-your-data-with-glmmlasso
+```{r}
+#this loop takes much longer to run because there's more random intercepts
+ 
+#all variables should be either continuous/numerical or factors
+summary(mem.df)
+
+#set lambdas... go from 10^-5 to 10^5, in 20 log steps (might take a while)
+lambda <- 10^seq(-5,5, length=20)
+ 
+#dummy vectors of model fit values for each lambda: BIC, AIC, prediction error
+BIC_vec <- rep(Inf, length(lambda))
+AIC_vec <- rep(Inf, length(lambda))
+Devianz_ma<-NULL
+Coeff_ma<-NULL
+ 
+family = gaussian(link = "identity")
+ 
+j<-1
+for (j in 1:length(BIC_vec)){
+ print(paste("Iteration ", j, sep=""))
+ 
+ glm1 <- try( #throwing main variables identified by the information criteria model selection into the LASSO cross-validation process; using plant.id as random effect
+ glmmLasso(fh ~ species + stem_sav + branching + start_temp + sample_wt + lfm,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = lambda[j],
+ switch.NR = TRUE,
+ final.re = TRUE), 
+ silent = TRUE)
+ 
+
+# code to make it continue anyway if an error occurs
+  if(class(glm1)!="try-error")
+ { 
+ 
+ #save BIC, AIC
+ BIC_vec[j]<-glm1$bic
+ AIC_vec[j]<-glm1$aic
+ 
+ #save coefficient outputs
+ Coeff_ma<-cbind(Coeff_ma,glm1$coefficients)
+ 
+ #save error (deviance) values
+ y.hat<-predict(glm1,mem.df) 
+ Devianz_ma[j]<-sum(family$dev.resids(mem.df$fh,y.hat,wt=rep(1,length(y.hat)))) } }
+
+# Best lamdas, based on different criteria
+lambda[which.min(BIC_vec)]
+# 20.69138
+lambda[which.min(AIC_vec)]
+# 0.5455595
+fh_lambda_bic <- lambda[which.min(BIC_vec)]
+fh_lambda_aic <- lambda[which.min(AIC_vec)]
+```
+
+### Model Selection
+```{r}
+fh_lasso <- glmmLasso(fh ~ species + stem_sav + branching + start_temp + sample_wt + lfm,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = fh_lambda_aic, # try both aic-based lambda and bic-based lambda
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(fh_lasso)
+```
+w/ LFM
+AIC: none removed
+BIC: LFM, SALAPI and SALLEU removed
+w/o LFM
+AIC & BIC: start temp, MALLAU removed
+
+## Flame Duration
+Because AIC/BIC based model selection came up with some solid results, we don't really need to use LASSO, but let's try it out anyways
+### Lambda Cross-validation 
+from https://davidabugaber.com/blog/f/find-the-optimal-mixed-model-for-your-data-with-glmmlasso
+```{r}
+#this loop takes much longer to run because there's more random intercepts
+ 
+#all variables should be either continuous/numerical or factors
+summary(mem.df)
+
+#set lambdas... go from 10^-5 to 10^5, in 20 log steps (might take a while)
+lambda <- 10^seq(-5,5, length=20)
+ 
+#dummy vectors of model fit values for each lambda: BIC, AIC, prediction error
+BIC_vec <- rep(Inf, length(lambda))
+AIC_vec <- rep(Inf, length(lambda))
+Devianz_ma<-NULL
+Coeff_ma<-NULL
+ 
+family = gaussian(link = "identity")
+ 
+j<-1
+for (j in 1:length(BIC_vec)){
+ print(paste("Iteration ", j, sep=""))
+ 
+ glm1 <- try( #throwing main variables identified by the information criteria model selection into the LASSO cross-validation process; using plant.id as random effect
+ glmmLasso(fd ~ species + branching + sample_wt + dmc + lfm,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = lambda[j],
+ switch.NR = TRUE,
+ final.re = TRUE), 
+ silent = TRUE)
+ 
+
+# code to make it continue anyway if an error occurs
+  if(class(glm1)!="try-error")
+ { 
+ 
+ #save BIC, AIC
+ BIC_vec[j]<-glm1$bic
+ AIC_vec[j]<-glm1$aic
+ 
+ #save coefficient outputs
+ Coeff_ma<-cbind(Coeff_ma,glm1$coefficients)
+ 
+ #save error (deviance) values
+ y.hat<-predict(glm1,mem.df) 
+ Devianz_ma[j]<-sum(family$dev.resids(mem.df$fd,y.hat,wt=rep(1,length(y.hat)))) } }
+
+# Best lamdas, based on different criteria
+lambda[which.min(BIC_vec)]
+# 20.69138
+lambda[which.min(AIC_vec)]
+# 1.832981
+fd_lambda_bic <- lambda[which.min(BIC_vec)]
+fd_lambda_aic <- lambda[which.min(AIC_vec)]
+```
+
+### Model Selection
+```{r}
+fd_lasso <- glmmLasso(fd ~ species + branching + sample_wt + dmc + lfm,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = fd_lambda_aic, # try both aic-based lambda and bic-based lambda
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(fd_lasso)
+```
+AIC: DMC, MALLAU removed
+BIC: LMR, SALAPI and SALLEU removed
+
+## Temp. Change
+### Lambda Cross-validation 
+from https://davidabugaber.com/blog/f/find-the-optimal-mixed-model-for-your-data-with-glmmlasso
+```{r}
+#this loop takes much longer to run because there's more random intercepts
+ 
+#all variables should be either continuous/numerical or factors
+summary(mem.df)
+
+#set lambdas... go from 10^-5 to 10^5, in 20 log steps (might take a while)
+lambda <- 10^seq(-5,5, length=20)
+ 
+#dummy vectors of model fit values for each lambda: BIC, AIC, prediction error
+BIC_vec <- rep(Inf, length(lambda))
+AIC_vec <- rep(Inf, length(lambda))
+Devianz_ma<-NULL
+Coeff_ma<-NULL
+ 
+family = gaussian(link = "identity")
+ 
+j<-1
+for (j in 1:length(BIC_vec)){
+ print(paste("Iteration ", j, sep=""))
+ 
+ glm1 <- try( #throwing main variables identified by the information criteria model selection into the LASSO cross-validation process; using plant.id as random effect
+ glmmLasso(temp_change ~ branching + leaf_area + sample_wt + start_temp + branch_volume + lfm,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = lambda[j],
+ switch.NR = TRUE,
+ final.re = TRUE), 
+ silent = TRUE)
+ 
+
+# code to make it continue anyway if an error occurs
+  if(class(glm1)!="try-error")
+ { 
+ 
+ #save BIC, AIC
+ BIC_vec[j]<-glm1$bic
+ AIC_vec[j]<-glm1$aic
+ 
+ #save coefficient outputs
+ Coeff_ma<-cbind(Coeff_ma,glm1$coefficients)
+ 
+ #save error (deviance) values
+ y.hat<-predict(glm1,mem.df) 
+ Devianz_ma[j]<-sum(family$dev.resids(mem.df$fh,y.hat,wt=rep(1,length(y.hat)))) } }
+
+# Best lamdas, based on different criteria
+lambda[which.min(BIC_vec)]
+# 6.158482
+lambda[which.min(AIC_vec)]
+# 6.158482
+tc_lambda <- lambda[which.min(AIC_vec)] # since aic and bic had same results, lambda can be either/or
+```
+
+### Model Selection
+```{r}
+tc_lasso <- glmmLasso(temp_change ~ branching + leaf_area + sample_wt + start_temp + branch_volume + lfm,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = tc_lambda,
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(tc_lasso)
+```
+w/ LFM; Both: start temp, sample weight, branching, all species but ERIKAR removed (most variables)
+w/o LFM; Both: start temp, SALAPI and SALLEU removed
+
+## Heat Flux Change
+This one is challenging, as AIC and BIC give vastly different results..
+### Lambda Cross-validation 
+from https://davidabugaber.com/blog/f/find-the-optimal-mixed-model-for-your-data-with-glmmlasso
+```{r}
+#this loop takes much longer to run because there's more random intercepts
+ 
+#all variables should be either continuous/numerical or factors
+summary(mem.df)
+
+#set lambdas... go from 10^-5 to 10^5, in 20 log steps (might take a while)
+lambda <- 10^seq(-5,5, length=20)
+ 
+#dummy vectors of model fit values for each lambda: BIC, AIC, prediction error
+BIC_vec <- rep(Inf, length(lambda))
+AIC_vec <- rep(Inf, length(lambda))
+Devianz_ma<-NULL
+Coeff_ma<-NULL
+ 
+family = gaussian(link = "identity")
+ 
+j<-1
+for (j in 1:length(BIC_vec)){
+ print(paste("Iteration ", j, sep=""))
+ 
+ glm1 <- try( #throwing main variables identified by the information criteria model selection into the LASSO cross-validation process; using plant.id as random effect
+ glmmLasso(heat_flux_change ~ species + leaf_mass_ratio + sample_wt,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = lambda[j],
+ switch.NR = TRUE,
+ final.re = TRUE), 
+ silent = TRUE)
+ 
+
+# code to make it continue anyway if an error occurs
+  if(class(glm1)!="try-error")
+ { 
+ 
+ #save BIC, AIC
+ BIC_vec[j]<-glm1$bic
+ AIC_vec[j]<-glm1$aic
+ 
+ #save coefficient outputs
+ Coeff_ma<-cbind(Coeff_ma,glm1$coefficients)
+ 
+ #save error (deviance) values
+ y.hat<-predict(glm1,mem.df) 
+ Devianz_ma[j]<-sum(family$dev.resids(mem.df$fh,y.hat,wt=rep(1,length(y.hat)))) } }
+
+# Best lamdas, based on different criteria
+lambda[which.min(BIC_vec)]
+# 69.51928
+lambda[which.min(AIC_vec)]
+# 6.158482
+hf_lambda_aic <- lambda[which.min(AIC_vec)]
+hf_lambda_bic <- lambda[which.min(BIC_vec)]
+```
+
+### Model Selection
+```{r}  
+hf_lasso <- glmmLasso(heat_flux_change ~ species + leaf_mass_ratio + sample_wt,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = hf_lambda_aic,
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(hf_lasso)
+```
+w/ lfm
+Variables removed: LFM and SALAPI (AIC) or all (BIC)
+w/o lfm
+Variables removed: ERIKAR and SALLEU
+
+# REMEF Figures
+Note: from above models, selecting top models with variables we're interested in looking at in further detail
+
+## Flame Height
+MAIN:
+Branching:
+```{r}
+fh_mod <- lmer(fh ~ branching + lfm*sample_wt + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_fh <- remef(fh_mod, fix = c('sample_wt', 'lfm', 'lfm:sample_wt'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+fh.branching.remef <- mem.df %>% 
+  mutate(species = case_when(species == 'ARTCAL' ~ "Ar. californica",
+                             species == 'ERIKAR' ~ "Er. karvinskianus",
+                             species == 'SALAPI' ~ "Sa. apiana",
+                             species == 'SALLEU' ~ "Sa. leucophylla",
+                             species == 'CEAGRI' ~ "Ce. griseus",
+                             species == 'MALLAU' ~ "Ma. laurina")) %>% 
+  ggplot(aes(x = branching, y = r_fh))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 0.9)+ 
+  stat_regline_equation(label.y = 1.2) +
+  labs(x = 'Branching (scaled)', y = 'Flame Height', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) + # "#FDAF91B2" is IRIDOU
+  theme(axis.title = element_text(face = 'bold', size = 16),
+        axis.text = element_text(size = 13),
+        legend.title = element_text(face = 'bold', size = 16),
+        legend.text = element_text(face = 'italic', size = 13))
+fh.branching.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'branching.vs.fh.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>% 
+ggplot(aes(x = branching, y = r_fh))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 0.9)+ 
+  stat_regline_equation(label.y = 1.2) +
+  labs(x = 'Branching (scaled)', y = 'Flame Height (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'branching.vs.fh.spp.png'), width = 8, height = 5.5)
+```
+
+Graphical Abstract Version:
+```{r}
+ggplot(mem.df, aes(x = branching, y = r_fh))  +
+  geom_point(alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  labs(x = 'Branching', y = 'Flame Height') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 20),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(face = 'bold', size = 20))
+```
+
+Sample Weight:
+```{r}
+fh_mod <- lmer(fh ~ lfm*sample_wt + branching + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_fh <- remef(fh_mod, fix = c('branching', 'lfm'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of mpa and removing the random effects to isolate the relationship between wet weight and flame height
+
+# With REMEF
+ggplot(mem.df, aes(x = sample_wt, y = r_fh))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 0.9)+ 
+  stat_regline_equation(label.y = 1.2) +
+  labs(x = 'Sample Weight (scaled)', y = 'Flame Height (effects removed, scaled)', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+ggsave(here('figures', 'MEM', 'REMEF', 'sw.vs.fh.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = sample_wt, y = r_fh))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 0.9)+ 
+  stat_regline_equation(label.y = 1.2) +
+  labs(x = 'Sample Weight (scaled)', y = 'Flame Height (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'sw.vs.fh.spp.png'), width = 8, height = 5.5)
+```
+
+LFM:
+```{r}
+fh_mod <- lmer(fh ~ lfm*sample_wt + branching + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_fh <- remef(fh_mod, fix = c('sample_wt', 'branching'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+fh.lfm.remef <- ggplot(mem.df, aes(x = lfm, y = r_fh))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 0.9)+ 
+  stat_regline_equation(label.y = 1.2) +
+  labs(x = 'Live Fuel Moisture (scaled)', y = 'Flame Height', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+fh.lfm.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'lfm.vs.fh.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = lfm, y = r_fh))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 0.9)+ 
+  stat_regline_equation(label.y = 1.2) +
+  labs(x = 'Live Fuel Moisture (scaled)', y = 'Flame Height (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'lfm.vs.fh.spp.png'), width = 8, height = 5.5)
+```
+
+Leaf SA:V:
+```{r}
+fh_mod <- lmer(fh ~ leaf_sav + branching + sample_wt + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_fh <- remef(fh_mod, fix = c('sample_wt', 'branching'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+ggplot(mem.df, aes(x = leaf_sav, y = r_fh))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 0.9)+ 
+  stat_regline_equation(label.y = 1.2) +
+  labs(x = 'Leaf SA:V (scaled)', y = 'Flame Height (effects removed, scaled)', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+ggsave(here('figures', 'MEM', 'REMEF', 'leaf_sav.vs.fh.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = leaf_sav, y = r_fh))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 0.9)+ 
+  stat_regline_equation(label.y = 1.2) +
+  labs(x = 'Leaf SA:V (scaled)', y = 'Flame Height (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'leaf_sav.vs.fh.spp.png'), width = 8, height = 5.5)
+```
+
+## Flame Duration
+MAIN:
+DMC:
+```{r}
+fd_mod <- lmer(fd ~ dmc*sample_wt + species + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+summary(fd_mod)
+
+mem.df$r_fd <- remef(fd_mod, fix = c('sample_wt', 'speciesCEAGRI', 'speciesERIKAR', 'speciesMALLAU', 'speciesSALAPI', 'speciesSALLEU'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+fd.dmc.remef <- ggplot(mem.df, aes(x = dmc, y = r_fd))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 3.95)+ 
+  stat_regline_equation(label.y = 4.55) +
+  labs(x = 'Dry Matter Content (scaled)', y = 'Flame Duration', color = 'Species') +
+  theme_bw() +
+  scale_y_continuous(breaks = c(0, 2.5, 5)) +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 16),
+        axis.text = element_text(size = 13),
+        legend.title = element_text(face = 'bold', size = 16),
+        legend.text = element_text(size = 13))
+fd.dmc.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'dmc.vs.fd.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = dmc, y = r_fd))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 1.9)+ 
+  stat_regline_equation(label.y = 2.3) +
+  labs(x = 'Dry Matter Content (scaled)', y = 'Flame Duration (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'dmc.vs.fd.spp.png'), width = 8, height = 5.5)
+
+# Interaction with species visualized
+fd.dmcint.remef <- ggplot(mem.df, aes(x = dmc, y = r_fd, color = species))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm') +
+  labs(x = 'Dry Matter Content (scaled)', y = 'Flame Duration', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+fd.dmcint.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'dmcint.vs.fd.png'), width = 8, height = 5.5)
+
+# not removing effect of sample weight
+mem.df$r_fd <- remef(fd_mod, fix = c('speciesCEAGRI', 'speciesERIKAR', 'speciesMALLAU', 'speciesSALAPI', 'speciesSALLEU'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+fd.dmc.remef <- ggplot(mem.df, aes(x = dmc, y = r_fd))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 3.95)+ 
+  stat_regline_equation(label.y = 4.55) +
+  labs(x = 'Dry Matter Content (scaled)', y = 'Flame Duration', color = 'Species') +
+  theme_bw() +
+  scale_y_continuous(breaks = c(0, 2.5, 5)) +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 16),
+        axis.text = element_text(size = 13),
+        legend.title = element_text(face = 'bold', size = 16),
+        legend.text = element_text(size = 13))
+fd.dmc.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'dmc.vs.fd.nosw.png'), width = 8, height = 5.5)
+```
+
+Sample Weight:
+```{r}
+fd_mod <- lmer(fd ~ dmc*sample_wt + species + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+summary(fd_mod)
+
+mem.df$r_fd <- remef(fd_mod, fix = c('dmc'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+ggplot(mem.df, aes(x = sample_wt, y = r_fd))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 3.7)+ 
+  stat_regline_equation(label.y = 4.2) +
+  labs(x = 'Sample Weight (scaled)', y = 'Flame Duration (effects removed, scaled)', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+ggsave(here('figures', 'MEM', 'REMEF', 'sw.vs.fd.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = sample_wt, y = r_fd))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 0.9)+ 
+  stat_regline_equation(label.y = 1.2) +
+  labs(x = 'Sample Weight (scaled)', y = 'Flame Duration (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'sw.vs.fd.spp.png'), width = 8, height = 5.5)
+```
+
+LFM
+```{r}
+fd_mod <- lmer(fd ~ lfm*sample_wt + species + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+summary(fd_mod)
+
+mem.df$r_fd <- remef(fd_mod, fix = c('sample_wt', 'speciesCEAGRI', 'speciesERIKAR', 'speciesMALLAU', 'speciesSALAPI', 'speciesSALLEU'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+fd.lfm.remef <- ggplot(mem.df, aes(x = lfm, y = r_fd))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 3.95)+ 
+  stat_regline_equation(label.y = 4.55) +
+  labs(x = 'Live Fuel Moisture (scaled)', y = 'Flame Duration', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+fd.lfm.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'lfm.vs.fd.png'), width = 8, height = 5.5)
+```
+
+
+## Heat Flux Change
+MAIN:
+Leaf mass ratio:
+```{r}
+hf_mod <- lmer(heat_flux_change ~ leaf_mass_ratio*sample_wt + species + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_hf <- remef(hf_mod, fix = c('sample_wt', 'speciesCEAGRI', 'speciesERIKAR', 'speciesMALLAU', 'speciesSALAPI', 'speciesSALLEU'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+hf.lmr.remef <- ggplot(mem.df, aes(x = leaf_mass_ratio, y = r_hf))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 1.96)+ 
+  stat_regline_equation(label.y = 2.65) +
+  labs(x = 'Leaf Mass Ratio (scaled)', y = 'Heat Flux Change', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  scale_y_continuous(breaks = c(-2.5, 0, 2.5)) +
+  theme(axis.title = element_text(face = 'bold', size = 16),
+        axis.text = element_text(size = 13),
+        legend.title = element_text(face = 'bold', size = 16),
+        legend.text = element_text(size = 13))
+hf.lmr.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'lmr.vs.heatflux.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = leaf_mass_ratio, y = r_hf))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 1.25)+ 
+  stat_regline_equation(label.y = 1.5) +
+  labs(x = 'Leaf Mass Ratio (scaled)', y = 'Heat Flux Change (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'lmr.vs.heatflux.spp.png'), width = 8, height = 5.5)
+
+# Not removing sample weight
+mem.df$r_hf <- remef(hf_mod, fix = c('speciesCEAGRI', 'speciesERIKAR', 'speciesMALLAU', 'speciesSALAPI', 'speciesSALLEU'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+hf.lmr.remef <- ggplot(mem.df, aes(x = leaf_mass_ratio, y = r_hf))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 1.96)+ 
+  stat_regline_equation(label.y = 2.65) +
+  labs(x = 'Leaf Mass Ratio (scaled)', y = 'Heat Flux Change', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  scale_y_continuous(breaks = c(-2.5, 0, 2.5)) +
+  theme(axis.title = element_text(face = 'bold', size = 16),
+        axis.text = element_text(size = 13),
+        legend.title = element_text(face = 'bold', size = 16),
+        legend.text = element_text(size = 13))
+hf.lmr.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'lmr.vs.heatflux.nosw.png'), width = 8, height = 5.5)
+```
+
+LMA:
+```{r}
+hf_mod <- lmer(heat_flux_change ~ LMA*sample_wt + species + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_hf <- remef(hf_mod, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+hf.lma.remef <- ggplot(mem.df, aes(x = LMA, y = r_hf))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 1.96)+ 
+  stat_regline_equation(label.y = 2.65) +
+  labs(x = 'Leaf Mass per Area (scaled)', y = 'Heat Flux Change', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+hf.lma.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'lma.vs.heatflux.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = LMA, y = r_hf))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 1.25)+ 
+  stat_regline_equation(label.y = 1.5) +
+  labs(x = 'Leaf Mass per Area (scaled)', y = 'Heat Flux Change (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'lma.vs.heatflux.spp.png'), width = 8, height = 5.5)
+```
+
+Sample Weight:
+```{r}
+hf_mod <- lmer(heat_flux_change ~ LMA*sample_wt + species + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_hf <- remef(hf_mod, fix = c('LMA'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+ggplot(mem.df, aes(x = sample_wt, y = r_hf))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 1.93)+ 
+  stat_regline_equation(label.y = 2.4) +
+  labs(x = 'Sample Weight (scaled)', y = 'Heat Flux Change (effects removed, scaled)', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+ggsave(here('figures', 'MEM', 'REMEF', 'sw.vs.heatflux.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = sample_wt, y = r_hf))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 1.25)+ 
+  stat_regline_equation(label.y = 1.5) +
+  labs(x = 'Sample Weight (scaled)', y = 'Heat Flux Change (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'sw.vs.heatflux.spp.png'), width = 8, height = 5.5)
+```
+
+Sample Weight (2):
+```{r}
+hf_mod <- lmer(heat_flux_change ~ species + sample_wt + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_hf <- remef(hf_mod, ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+hf.sw2.remef <- ggplot(mem.df, aes(x = sample_wt, y = r_hf))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 1.98)+ 
+  stat_regline_equation(label.y = 2.67) +
+  labs(x = 'Sample Weight (scaled)', y = 'Heat Flux Change', color = 'Species') +
+  theme_bw() +
+  scale_y_continuous(breaks = c(-2, -1, 0, 1, 2, 3)) +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+hf.sw2.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'sw2.vs.heatflux.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = sample_wt, y = r_hf))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 1.25)+ 
+  stat_regline_equation(label.y = 1.5) +
+  labs(x = 'Sample Weight (scaled)', y = 'Heat Flux Change (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'sw2.vs.heatflux.spp.png'), width = 8, height = 5.5)
+```
+
+## Temp. Change
+MAIN
+Branching:
+```{r}
+temp_mod <- lmer(temp_change ~ start_temp*sample_wt + branching + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_temp <- remef(temp_mod, fix = c('start_temp', 'sample_wt', 'start_temp:sample_wt'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+temp.branching.remef <- ggplot(mem.df, aes(x = branching, y = r_temp))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 1.9)+ 
+  stat_regline_equation(label.y = 2.4) +
+  labs(x = 'Branching (scaled)', y = 'Temp. Change', color = 'Species') +
+  theme_bw() +
+  scale_y_continuous(breaks = c(-1, 0, 1, 2)) +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 16),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 16),
+        legend.text = element_text(size = 13))
+temp.branching.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'branching.vs.temp.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = branching, y = r_temp))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 3.8)+ 
+  stat_regline_equation(label.y = 4.3) +
+  labs(x = 'Branching (scaled)', y = 'Temp. Change (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'branching.vs.temp.spp.png'), width = 8, height = 5.5)
+```
+
+Sample weight:
+```{r}
+temp_mod <- lmer(temp_change ~ start_temp*sample_wt + branching + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_temp <- remef(temp_mod, fix = c('start_temp', 'branching'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+ggplot(mem.df, aes(x = sample_wt, y = r_temp))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 3.6)+ 
+  stat_regline_equation(label.y = 4) +
+  labs(x = 'Sample Weight (scaled)', y = 'Temp. Change (effects removed, scaled)', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+ggsave(here('figures', 'MEM', 'REMEF', 'sw.vs.temp.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = sample_wt, y = r_temp))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 1.9)+ 
+  stat_regline_equation(label.y = 2.3) +
+  labs(x = 'Sample Weight (scaled)', y = 'Temp. Change (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'sw.vs.temp.spp.png'), width = 8, height = 5.5)
+```
+
+Starting Temp.
+```{r}
+mem.df$r_temp <- remef(temp_mod, fix = c('sample_wt', 'branching'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+ggplot(mem.df, aes(x = start_temp, y = r_temp))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 2.95)+ 
+  stat_regline_equation(label.y = 3.4) +
+  labs(x = 'Starting Temp. (scaled)', y = 'Temp. Change (effects removed, scaled)', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(face = 'bold', size = 15))
+ggsave(here('figures', 'MEM', 'REMEF', 'starttemp.vs.temp.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = start_temp, y = r_temp))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 1.9)+ 
+  stat_regline_equation(label.y = 2.3) +
+  labs(x = 'Starting Temp. (scaled)', y = 'Temp. Change (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'starttemp.vs.temp.spp.png'), width = 8, height = 5.5)
+```
+
+LFM:
+```{r}
+temp_mod <- lmer(temp_change ~ start_temp*sample_wt + branching + lfm + (1|plant_id), data = mem.df, REML = F) # remef is also sensitive to NAs
+
+mem.df$r_temp <- remef(temp_mod, fix = c('start_temp', 'sample_wt', 'start_temp:sample_wt', 'branching'), ran = "all", keep.intercept = FALSE) # w/ remef, we are removing the fixed effect of wet weight and removing the random effects to isolate the relationship between mpa and flame height
+
+# With REMEF
+temp.lfm.remef <- ggplot(mem.df, aes(x = lfm, y = r_temp))  +
+  geom_point(aes(color = species), alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  stat_cor(label.y = 1.9)+ 
+  stat_regline_equation(label.y = 2.3) +
+  labs(x = 'Live Fuel Moisture (scaled)', y = 'Temp. Change', color = 'Species') +
+  theme_bw() +
+  scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  theme(legend.title = element_text(face = 'bold', size = 15),
+        axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+temp.lfm.remef
+ggsave(here('figures', 'MEM', 'REMEF', 'lfm.vs.temp.png'), width = 8, height = 5.5)
+
+# Split by Species
+mem.df %>%  filter(species != 'HETARB') %>% 
+ggplot(aes(x = lfm, y = r_temp))  +
+  geom_point(alpha = 0.8, color = 'gray20') +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~species, scales = 'free') +
+  stat_cor(label.y = 3.8)+ 
+  stat_regline_equation(label.y = 4.3) +
+  labs(x = 'Live Fuel Moisture (scaled)', y = 'Temp. Change (effects removed, scaled)') +
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+ggsave(here('figures', 'MEM', 'REMEF', 'lfm.vs.temp.spp.png'), width = 8, height = 5.5)
+```
+
+## Arranged
+```{r}
+ggarrange(fh.branching.remef, fd.dmc.remef, temp.branching.remef, hf.lmr.remef,
+          labels = c('a', 'b', 'c', 'd'), 
+          font.label = list(size = 28),
+          ncol = 2, nrow = 2,
+          common.legend = T)
+ggsave(here('figures', 'main_figures', 'remef.scatterplots.png'), height = 8, width = 10)
+```
+
+### LFM Arranged
+```{r}
+ggarrange(fh.lfm.remef, fd.lfm.remef, temp.lfm.remef,
+          labels = c('A', 'B', 'C'), 
+          font.label = list(size = 28),
+          ncol = 3, nrow = 1,
+          common.legend = T)
+ggsave(here('figures', 'main_figures', 'lfm.remef.scatterplots.png'), height = 5, width = 14)
+```
+
+
+
+## REMEF: SW and Rand. Effects
+### Function
+```{r}
+sw.rand.effects.scatterplots <- function(df, x.var){
+
+mod1 <- lmer(as.formula(paste0('temp_change ~ sample_wt +', x.var, '+ (1|plant_id)')), data = df, REML = F)
+mod2 <- lmer(as.formula(paste0('fh ~ sample_wt +', x.var, '+ (1|plant_id)')), data = df, REML = F)
+mod3 <- lmer(as.formula(paste0('fd ~ sample_wt +', x.var, '+ (1|plant_id)')), data = df, REML = F)
+mod4 <- lmer(as.formula(paste0('heat_flux_change ~ sample_wt +', x.var, '+ (1|plant_id)')), data = df, REML = F)
+
+df$r_temp <- remef(mod1, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE) 
+df$r_fh <- remef(mod2, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE) 
+df$r_fd <- remef(mod3, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE) 
+df$r_hf <- remef(mod4, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE) 
+
+plot <- df %>% 
+  pivot_longer(cols = c('r_temp', 'r_fh', 'r_fd', 'r_hf'), names_to = 'flam_metric', values_to = 'flam_val') %>% 
+ggplot(aes_string(x = x.var, y = 'flam_val'))  +
+  geom_point(alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~flam_metric) +
+  labs(x = x.var) +
+  stat_cor()+
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+return(plot)
+}
+```
+
+### Plots
+```{r}
+sw.rand.effects.scatterplots(mem.df, 'lfm')
+sw.rand.effects.scatterplots(mem.df, 'dmc')
+sw.rand.effects.scatterplots(mem.df, 'mpa')
+sw.rand.effects.scatterplots(mem.df, 'branching')
+sw.rand.effects.scatterplots(mem.df, 'stem_sav')
+sw.rand.effects.scatterplots(mem.df, 'leaf_mass_ratio')
+sw.rand.effects.scatterplots(mem.df, 'leaf_sav')
+sw.rand.effects.scatterplots(mem.df, 'LMA')
+sw.rand.effects.scatterplots(mem.df, 'thickness')
+```
+
+## REMEF: Max. Models
+```{r}
+remef.max.model.scatterplots <- function(df, x.var){
+
+mod1 <- lmer(temp_change ~ lfm + dmc + mpa + branching + stem_sav + leaf_mass_ratio + leaf_sav + LMA + sample_wt + (1|plant_id), df, REML = F)
+mod2 <- lmer(fh ~ lfm + dmc + mpa + branching + stem_sav + leaf_mass_ratio + leaf_sav + LMA + sample_wt + (1|plant_id), df, REML = F)
+mod3 <- lmer(fd ~ lfm + dmc + mpa + branching + stem_sav + leaf_mass_ratio + leaf_sav + LMA + sample_wt + (1|plant_id), df, REML = F)
+mod4 <- lmer(heat_flux_change ~ lfm + dmc + mpa + branching + stem_sav + leaf_mass_ratio + leaf_sav + LMA + sample_wt + (1|plant_id), df, REML = F)
+
+rm.string <- case_when(x.var == 'lfm' ~ c('dmc','mpa','branching','stem_sav', 'leaf_mass_ratio','leaf_sav','LMA','sample_wt'),
+                       x.var == 'dmc' ~ c('lfm','mpa','branching','stem_sav', 'leaf_mass_ratio','leaf_sav','LMA','sample_wt'),
+                       x.var == 'mpa' ~ c('lfm','dmc','branching','stem_sav', 'leaf_mass_ratio','leaf_sav','LMA','sample_wt'),
+                       x.var == 'branching' ~ c('lfm','mpa','dmc','stem_sav', 'leaf_mass_ratio','leaf_sav','LMA','sample_wt'),
+                       x.var == 'stem_sav' ~ c('lfm','mpa','branching','dmc', 'leaf_mass_ratio','leaf_sav','LMA','sample_wt'),
+                       x.var == 'leaf_mass_ratio' ~ c('lfm','mpa','branching','stem_sav', 'dmc','leaf_sav','LMA','sample_wt'),
+                       x.var == 'leaf_sav' ~ c('lfm','mpa','branching','stem_sav', 'leaf_mass_ratio','dmc','LMA','sample_wt'),
+                       x.var == 'LMA' ~ c('lfm','mpa','branching','stem_sav', 'leaf_mass_ratio','leaf_sav','dmc','sample_wt'))
+
+df$r_temp <- remef(mod1, fix = rm.string, ran = "all", keep.intercept = FALSE) 
+df$r_fh <- remef(mod2, fix = rm.string, ran = "all", keep.intercept = FALSE) 
+df$r_fd <- remef(mod3, fix = rm.string, ran = "all", keep.intercept = FALSE) 
+df$r_hf <- remef(mod4, fix = rm.string, ran = "all", keep.intercept = FALSE) 
+
+plot <- df %>% 
+  pivot_longer(cols = c('r_temp', 'r_fh', 'r_fd', 'r_hf'), names_to = 'flam_metric', values_to = 'flam_val') %>% 
+ggplot(aes_string(x = x.var, y = 'flam_val'))  +
+  geom_point(alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~flam_metric) +
+  labs(x = x.var) +
+  stat_cor()+
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+return(plot)
+}
+```
+
+
+```{r}
+remef.max.model.scatterplots(mem.df, 'lfm')
+remef.max.model.scatterplots(mem.df, 'dmc')
+remef.max.model.scatterplots(mem.df, 'mpa')
+remef.max.model.scatterplots(mem.df, 'branching')
+remef.max.model.scatterplots(mem.df, 'stem_sav')
+remef.max.model.scatterplots(mem.df, 'leaf_mass_ratio')
+remef.max.model.scatterplots(mem.df, 'leaf_sav')
+remef.max.model.scatterplots(mem.df, 'LMA')
+
+# Thickness
+df <- mem.df
+
+mod1 <- lmer(temp_change ~ lfm + dmc + mpa + branching + stem_sav + leaf_mass_ratio + thickness + LMA + sample_wt + (1|plant_id), df, REML = F)
+mod2 <- lmer(fh ~ lfm + dmc + mpa + branching + stem_sav + leaf_mass_ratio + thickness + LMA + sample_wt + (1|plant_id), df, REML = F)
+mod3 <- lmer(fd ~ lfm + dmc + mpa + branching + stem_sav + leaf_mass_ratio + thickness + LMA + sample_wt + (1|plant_id), df, REML = F)
+mod4 <- lmer(heat_flux_change ~ lfm + dmc + mpa + branching + stem_sav + leaf_mass_ratio + thickness + LMA + sample_wt + (1|plant_id), df, REML = F)
+
+df$r_temp <- remef(mod1, fix = c('dmc','mpa','branching','stem_sav', 'leaf_mass_ratio','lfm','LMA','sample_wt'), ran = "all", keep.intercept = FALSE) 
+df$r_fh <- remef(mod2, fix = c('dmc','mpa','branching','stem_sav', 'leaf_mass_ratio','lfm','LMA','sample_wt'), ran = "all", keep.intercept = FALSE) 
+df$r_fd <- remef(mod3, fix = c('dmc','mpa','branching','stem_sav', 'leaf_mass_ratio','lfm','LMA','sample_wt'), ran = "all", keep.intercept = FALSE) 
+df$r_hf <- remef(mod4, fix = c('dmc','mpa','branching','stem_sav', 'leaf_mass_ratio','lfm','LMA','sample_wt'), ran = "all", keep.intercept = FALSE) 
+
+df %>% 
+  pivot_longer(cols = c('r_temp', 'r_fh', 'r_fd', 'r_hf'), names_to = 'flam_metric', values_to = 'flam_val') %>% 
+ggplot(aes_string(x = 'thickness', y = 'flam_val'))  +
+  geom_point(alpha = 0.8) +
+  geom_smooth(method = 'lm', color = 'gray40') +
+  facet_wrap(~flam_metric) +
+  labs(x = 'thickness') +
+  stat_cor()+
+  theme_bw() +
+  theme(axis.title = element_text(face = 'bold', size = 15),
+        axis.text = element_text(size = 12))
+```
+
+
+# Testing for Interactions
+Using ChatGPT generated code, integrated with my previously made function
+```{r}
+# Defining predictors we're interested in as a character vector
+predictors <- c('lfm', 'LMA', 'sample_wt', 'leaf_mass_ratio', 'branching', 'mpa', 'start_temp', 'dmc', 'branch_volume', 'stem_sav', 'leaf_area', 'leaf_sav', 'thickness', 'species')
+
+# NOTE: y.var and rem.str must be a character vector, predictors must be a dataframe
+mem.int.selection <- function(y.var, predictors, df, rem.str = '(1|plant_id)'){
+# FIRST: List models
+# Generate all possible combinations of two predictors for interaction
+interaction_combinations <- combn(predictors, 2, simplify = FALSE)
+
+# Create an empty list to store model results
+mod.list <- list()
+
+# Loop through the interaction combinations
+for (combo in interaction_combinations) {
+  # Create the formula for the model (e.g., outcome ~ predictor1 * predictor2)
+  formula <- as.formula(paste(y.var, "~", paste(combo, collapse = "*"), "+", rem.str))
+  
+  # Fit the mixed-effects model
+  model <- lmer(formula, data = mem.df)
+  
+  # Store the model result in the list
+  mod.list[[paste(combo, collapse = "_")]] <- model
+}
+  
+  # CREATE DATAFRAME
+  model.df <- data.frame(model.id = c(1:length(mod.list)),
+                         call = c(rep(NA, length(mod.list))),
+                         multicollinearity = c(rep(NA, length(mod.list))),
+                         AIC = c(rep(NA, length(mod.list))),
+                         BIC = c(rep(NA, length(mod.list))),
+                         CP = c(rep(NA, length(mod.list))))
+  
+  # SECOND: FLAG ANY MODELS THAT BREAK MULTICOLINEARITY ASSUMPTIONS
+  for(i in 1:length(mod.list)){
+    vif.df <- multicollinearity(mod.list[[i]])
+    ifelse(max(vif.df$VIF) > 5, model.df$multicollinearity[i] <- 'yes', 
+           model.df$multicollinearity[i] <- 'no')
+  }
+  
+  for(i in 1:length(mod.list)){
+    if(model.df$multicollinearity[i] == 'yes'){
+      mod.list[[i]] <- NA
+    }}
+  
+  # THIRD: CALCULATE AIC, BIC, MALLOWS CP
+  for(i in 1:length(mod.list)) {
+    if(model.df$multicollinearity[i] == 'yes')
+    {model.df[i, 3:6] <- NA}
+    else{
+      model.df$call[i] <- paste(colnames(mod.list[[i]]@frame), collapse = ', ')
+      model.df$AIC[i] <- AIC(mod.list[[i]])
+      model.df$BIC[i] <- BIC(mod.list[[i]])
+      model.df$CP[i] <- mallows.cp(mod.list[[i]], k = length(mod.list[[i]]@beta - 1), n = nrow(df))
+    }
+  }
+  output <- list(model.df, mod.list)
+  return(output)
+}
+```
+
+## Flame Height
+```{r}
+fh.mem.int.selection <- mem.int.selection('fh', predictors, mem.df)
+fh.int.model.df <- fh.mem.int.selection[[1]]
+fh.int.mod.list <- fh.mem.int.selection[[2]]
+
+# testing models w/ interaction terms
+fh.int.mod.list[[56]] <- lmer(fh ~ branching*sample_wt + stem_sav + (1|plant_id), data = mem.df)
+mem.performance(fh.int.mod.list[[56]])
+fh.int.mod.list[[57]] <- lmer(fh ~ branching*sample_wt + species + (1|plant_id), data = mem.df)
+mem.performance(fh.int.mod.list[[57]])
+fh.int.mod.list[[58]] <- lmer(fh ~ branching*sample_wt + lfm + (1|plant_id), data = mem.df)
+mem.performance(fh.int.mod.list[[58]])
+fh.int.mod.list[[59]] <- lmer(fh ~ lfm*sample_wt + branching + (1|plant_id), data = mem.df)
+mem.performance(fh.int.mod.list[[59]]) ##
+fh.int.mod.list[[60]] <- lmer(fh ~ lfm*sample_wt + stem_sav + (1|plant_id), data = mem.df)
+mem.performance(fh.int.mod.list[[60]])
+fh.int.mod.list[[61]] <- lmer(fh ~ lfm*sample_wt + species + (1|plant_id), data = mem.df)
+mem.performance(fh.int.mod.list[[61]])
+fh.int.mod.list[[62]] <- lmer(fh ~ lfm*sample_wt + start_temp + (1|plant_id), data = mem.df)
+mem.performance(fh.int.mod.list[[62]])
+```
+
+## Flame Duration
+```{r}
+fd.mem.int.selection <- mem.int.selection('fd', predictors, mem.df)
+fd.int.model.df <- fd.mem.int.selection[[1]]
+fd.int.mod.list <- fd.mem.int.selection[[2]]
+
+# testing models w/ interaction terms
+fd.int.mod.list[[56]] <- lmer(fd ~ lfm*sample_wt + species + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[56]]) ##
+fd.int.mod.list[[57]] <- lmer(fd ~ lfm*sample_wt + dmc + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[57]]) ##
+fd.int.mod.list[[58]] <- lmer(fd ~ lfm*sample_wt + branching + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[58]])
+fd.int.mod.list[[59]] <- lmer(fd ~ lfm*sample_wt + branching + dmc + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[59]]) 
+fd.int.mod.list[[60]] <- lmer(fd ~ lfm*sample_wt + branching + species + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[60]])
+fd.int.mod.list[[61]] <- lmer(fd ~ dmc*sample_wt + lfm + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[61]]) 
+fd.int.mod.list[[62]] <- lmer(fd ~ dmc*sample_wt + branching + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[62]]) ##
+fd.int.mod.list[[63]] <- lmer(fd ~ dmc*sample_wt + species + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[63]]) ##
+fd.int.mod.list[[64]] <- lmer(fd ~ dmc*sample_wt + lfm + species + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[64]]) ##
+fd.int.mod.list[[65]] <- lmer(fd ~ dmc*sample_wt + branching + species + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[65]]) ##
+fd.int.mod.list[[66]] <- lmer(fd ~ dmc*sample_wt + leaf_mass_ratio + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[66]])
+fd.int.mod.list[[67]] <- lmer(fd ~ lfm*sample_wt + leaf_mass_ratio + (1|plant_id), data = mem.df)
+mem.performance(fd.int.mod.list[[67]])
+```
+
+## Temp. Change
+```{r}
+temp.mem.int.selection <- mem.int.selection('temp_change', predictors, mem.df)
+temp.int.model.df <- temp.mem.int.selection[[1]]
+temp.int.mod.list <- temp.mem.int.selection[[2]]
+
+# testing models w/ interaction terms
+temp.int.mod.list[[56]] <- lmer(temp_change ~ start_temp*sample_wt + species + (1|plant_id), data = mem.df)
+mem.performance(temp.int.mod.list[[56]]) 
+temp.int.mod.list[[57]] <- lmer(temp_change ~ start_temp*sample_wt + branching + (1|plant_id), data = mem.df)
+mem.performance(temp.int.mod.list[[57]]) ##
+temp.int.mod.list[[58]] <- lmer(temp_change ~ start_temp*sample_wt + lfm + (1|plant_id), data = mem.df)
+mem.performance(temp.int.mod.list[[58]])
+temp.int.mod.list[[59]] <- lmer(temp_change ~ start_temp*sample_wt + branching + lfm + (1|plant_id), data = mem.df)
+mem.performance(temp.int.mod.list[[59]]) ##
+temp.int.mod.list[[60]] <- lmer(temp_change ~ start_temp*sample_wt + branching + species + (1|plant_id), data = mem.df)
+mem.performance(temp.int.mod.list[[60]])
+temp.int.mod.list[[61]] <- lmer(temp_change ~ start_temp*branch_volume + sample_wt + (1|plant_id), data = mem.df)
+mem.performance(temp.int.mod.list[[61]])
+temp.int.mod.list[[62]] <- lmer(temp_change ~ start_temp*branch_volume + branching + (1|plant_id), data = mem.df)
+mem.performance(temp.int.mod.list[[62]]) ##
+temp.int.mod.list[[63]] <- lmer(temp_change ~ start_temp*branch_volume + lfm + (1|plant_id), data = mem.df)
+mem.performance(temp.int.mod.list[[63]]) 
+```
+
+## Heat Flux Change
+```{r}
+hf.mem.int.selection <- mem.int.selection('heat_flux_change', predictors, mem.df)
+hf.int.model.df <- hf.mem.int.selection[[1]]
+hf.int.mod.list <- hf.mem.int.selection[[2]]
+
+# testing models w/ interaction terms
+hf.int.mod.list[[56]] <- lmer(heat_flux_change ~ LMA*sample_wt + species + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[56]])
+hf.int.mod.list[[57]] <- lmer(heat_flux_change ~ LMA*sample_wt + lfm + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[57]])
+hf.int.mod.list[[58]] <- lmer(heat_flux_change ~ LMA*sample_wt + start_temp + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[58]])
+hf.int.mod.list[[59]] <- lmer(heat_flux_change ~ LMA*sample_wt + leaf_mass_ratio + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[59]])
+hf.int.mod.list[[60]] <- lmer(heat_flux_change ~ LMA*sample_wt + lfm + species + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[60]]) 
+hf.int.mod.list[[61]] <- lmer(heat_flux_change ~ LMA*sample_wt + branching + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[61]])
+hf.int.mod.list[[63]] <- lmer(heat_flux_change ~ lfm*sample_wt + species + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[63]])
+hf.int.mod.list[[64]] <- lmer(heat_flux_change ~ lfm*sample_wt + leaf_mass_ratio + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[64]])
+hf.int.mod.list[[65]] <- lmer(heat_flux_change ~ lfm*sample_wt + LMA + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[65]])
+hf.int.mod.list[[66]] <- lmer(heat_flux_change ~ lfm*sample_wt + start_temp + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[66]])
+hf.int.mod.list[[67]] <- lmer(heat_flux_change ~ leaf_mass_ratio*sample_wt + species + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[67]]) ##
+hf.int.mod.list[[68]] <- lmer(heat_flux_change ~ leaf_mass_ratio*sample_wt + branch_volume + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[68]])
+hf.int.mod.list[[69]] <- lmer(heat_flux_change ~ leaf_mass_ratio*sample_wt + LMA + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[69]])
+hf.int.mod.list[[70]] <- lmer(heat_flux_change ~ leaf_mass_ratio*sample_wt + start_temp + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[70]])
+hf.int.mod.list[[71]] <- lmer(heat_flux_change ~ leaf_mass_ratio*sample_wt + lfm + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[71]])
+hf.int.mod.list[[72]] <- lmer(heat_flux_change ~ leaf_mass_ratio*sample_wt + species + lfm + (1|plant_id), data = mem.df)
+mem.performance(hf.int.mod.list[[72]])
+```
+
+# Nice Model Selection Results Table
+## Top Models
+```{r}
+top.fh <- fh.int.mod.list[[59]]
+top.fh
+top.fd <- fd.int.mod.list[[63]]
+top.fd
+top.temp <- temp.int.mod.list[[57]]
+top.temp
+top.hf <- hf.int.mod.list[[67]]
+top.hf
+
+tab_model(top.fh, top.fd, top.temp, top.hf,
+          show.reflvl = TRUE, 
+          digits = 3, 
+          show.aic = TRUE, 
+          show.ci = FALSE,
+          show.icc = FALSE, 
+          string.pred = "Coeffcient", 
+         title = "MEM Selection: Coefficients, Significance for Top Models",
+  string.p = "P-Value", 
+  p.style = "stars")
+```
+
+## Figure
+```{r}
+pred_vec <- c('branching', 'dmc', 'dmc:sample_wt', 'leaf_mass_ratio', 'leaf_mass_ratio:sample_wt', 'lfm', 'lfm:sample_wt', 'sample_wt', 'species', 'start_temp', 'start_temp:sample_wt')
+predictors <- rep(pred_vec, 4)
+flam_metrics <- c(rep('Flame\nHeight', length(pred_vec)),
+                  rep('Flame\nDuration', length(pred_vec)),
+                  rep('Temperature\nChange', length(pred_vec)),
+                  rep('Heat Flux\nChange', length(pred_vec)))
+coef <- c(0.250, NA, NA, NA, NA, 0.023, 0.384, 0.576, NA, NA, NA,
+          NA, 0.220, 0.378, NA, NA, NA, NA, 0.418, NA, NA, NA,
+          0.266, NA, NA, NA, NA, NA, NA, 0.123, NA, -0.532, -0.308,
+          NA, NA, NA, -0.082, -0.263, NA, NA, 0.758, NA, NA, NA)
+p.val <- c('***', NA, NA, NA, NA, NA, '***', '***', NA, NA, NA,
+           NA, NA, '***', NA, NA, NA, NA, '***', NA, NA, NA,
+           '***', NA, NA, NA, NA, NA, NA, NA, NA, '***', '***',
+           NA, NA, NA, NA, '**', NA, NA, '***', NA, NA, NA)
+woo <- data.frame(predictors, flam_metrics, coef, p.val) %>% 
+  filter(predictors != c('leaf_dmc', 'stem_dmc', 'mpa', 'leaf_mass_ratio', 'dw_spp_dev')) %>% 
+  mutate(predictors = case_when(
+    predictors == 'lfm' ~ 'Live Fuel\n Moisture',
+    predictors == 'sample_wt' ~ 'Sample Weight',
+    predictors == 'branching' ~ 'Branching',
+    predictors == 'start_temp' ~ 'Starting\n Temperature',
+    predictors == 'dmc' ~ 'Dry Matter\n Content',
+    predictors == 'species' ~ 'Species',
+    predictors == 'leaf_mass_ratio' ~ 'Leaf Mass\n Ratio',
+    predictors == 'dmc:sample_wt' ~ 'DMC x\nSample Weight',
+    predictors == 'lfm:sample_wt' ~ 'LFM x\nSample Weight',
+    predictors == 'leaf_mass_ratio:sample_wt' ~ 'Leaf Mass Ratio x\nSample Weight',
+    predictors == 'start_temp:sample_wt' ~ 'Starting Temp x\nSample Weight'
+  )) %>% 
+  mutate(predictors = as.factor(predictors)) %>% 
+  mutate(predictors = fct_relevel(predictors, c('Sample Weight', 'Branching', 'Species', 'Starting\n Temperature', 'Dry Matter\n Content', 'Live Fuel\n Moisture', 'Leaf Mass\n Ratio', 'DMC x\nSample Weight', 'LFM x\nSample Weight', 'Leaf Mass Ratio x\nSample Weight', 'Starting Temp x\nSample Weight'))) %>% 
+  mutate(flam_metrics = as.factor(flam_metrics)) %>% 
+  mutate(flam_metrics = fct_relevel(flam_metrics, c('Flame\nDuration', 'Heat Flux\nChange', 'Temperature\nChange', 'Flame\nHeight'))) %>% 
+  mutate(col_pred = ifelse(predictors == 'Species' & flam_metrics %in% c('Heat Flux\nChange', 'Flame\nDuration'), 'gray20', 'white'))
+
+woo %>% 
+ggplot(aes(x = predictors, y = flam_metrics, fill = coef)) +
+  geom_tile(aes(x = predictors, y = flam_metrics, fill = coef)) +
+  geom_text(aes(x = predictors, y = flam_metrics, label = p.val), color = 'white', fontface = 'bold', size = 8) +
+  labs(x = 'Predictors', y = 'Flam. Metrics', fill = 'Coefficient\n') +
+  scale_fill_gradient2(low = 'darkred', mid = "gray80", high = 'darkblue', midpoint = 0, na.value = woo$col_pred, limits = c(-0.85, 0.85)) +
+  geom_vline(xintercept = 7.5, size = 0.35, linetype = 'dashed') +
+  geom_hline(yintercept = c(0.5, 1.5, 2.5, 3.5, 4.5), size = 0.1, color = 'gray80') +
+  geom_vline(xintercept = c(0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5), size = 0.1, color = 'gray80') +
+  guides(fill = guide_colorbar(barwidth = 1.5, barheight = 20)) +
+  #theme_bw() +
+  theme(legend.position = 'right',
+        legend.key.width = unit(1.5, 'cm'),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(size = 23, face = 'bold', angle = 90, hjust = 1, vjust = 0.5),
+        axis.text.y = element_text(size = 23, face = 'bold'),
+        legend.title = element_text(face = 'bold', size = 22),
+        legend.text = element_text(face = 'bold', size = 18),
+        panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+        panel.grid.major = element_blank(),  # Hide major gridlines
+        panel.grid.minor = element_blank())
+ggsave(here('figures', 'MEM', 'main.mem.results.png'), height = 8, width = 17)
+```
+
+# REMEF for Conceptual Figures
+## Option 1: Max. Models
+```{r}
+concept.remef.df <- flamm.df %>% 
+  filter(ignition != '0') %>% 
+  unite('plant_id', c(species, plant), sep = '_', remove = F) %>% 
+  select(species, thickness, lfm, sample_wt, leaf_mass_ratio, branching, mpa,
+         ignition, fh, fd, temp_change, heat_flux_change, prop_ig, start_temp,
+         stem_dmc, leaf_dmc, dmc, stem_sav, leaf_sav, dw_sppdev, plant_id, LMA,
+         leaf_area, plant) %>% 
+  mutate(lfm = scale(lfm), mpa = scale(mpa), branching = scale(branching),
+         leaf_mass_ratio = scale(leaf_mass_ratio), sample_wt = scale(sample_wt),
+         start_temp = scale(start_temp), fh = scale(fh), fd = scale(fd), 
+         temp_change = scale(temp_change), heat_flux_change = scale(heat_flux_change),
+         stem_dmc = scale(stem_dmc), leaf_dmc = scale(leaf_dmc),
+         dmc = scale(dmc), stem_sav = scale(stem_sav), leaf_sav= scale(leaf_sav),
+         dw_sppdev= scale(dw_sppdev), LMA = scale(LMA), leaf_area = scale(leaf_area)) %>% 
+  mutate(leaf_area = ifelse(species == 'HETARB' & is.na(leaf_area), 1.673288, leaf_area),
+         leaf_sav = ifelse(species == 'HETARB' & is.na(leaf_sav), -0.8646572, leaf_sav)) %>%  # imputing mean for NA values
+  drop_na(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, stem_sav, leaf_area, leaf_sav, thickness, species)
+
+# mixed effects models
+fh_c_mod <- lmer(fh ~ branching + sample_wt + lfm + leaf_mass_ratio + species + start_temp + LMA + dmc + stem_sav + (1|plant_id), data = concept.remef.df, REML = F) # remef is also sensitive to NAs
+fd_c_mod <- lmer(fd ~ branching + sample_wt + lfm + leaf_mass_ratio + species + start_temp + LMA + dmc + stem_sav + (1|plant_id), data = concept.remef.df, REML = F) # remef is also sensitive to NAs
+temp_c_mod <- lmer(temp_change ~ branching + sample_wt + lfm + leaf_mass_ratio + species + start_temp + LMA + dmc + stem_sav + (1|plant_id), data = concept.remef.df, REML = F) # remef is also sensitive to NAs
+hf_c_mod <- lmer(heat_flux_change ~ branching + sample_wt + lfm + leaf_mass_ratio + species + start_temp + LMA + dmc + stem_sav + (1|plant_id), data = concept.remef.df, REML = F) # remef is also sensitive to NAs
+
+# remef
+concept.remef.df$r_fh <- remef(fh_c_mod, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE)
+concept.remef.df$r_fd <- remef(fd_c_mod, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE)
+concept.remef.df$r_temp_change <- remef(temp_c_mod, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE)
+concept.remef.df$r_heat_flux_change <- remef(hf_c_mod, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE)
+
+# dataframe
+concept.df <- concept.remef.df %>% 
+  select(species, ignition, prop_ig, fh, fd, temp_change, heat_flux_change, r_fh, r_fd, r_temp_change, r_heat_flux_change)
+write.csv(concept.df, here('data', 'processed-data', 'conceptual_flam_remef.csv'))
+
+# plots
+ggplot(aes(x = fh, y = r_fh), data = concept.remef.df) +
+  geom_point()
+ggplot(aes(x = sample_wt, y = fh), data = concept.remef.df) +
+  geom_point()
+ggplot(aes(x = sample_wt, y = r_fh), data = concept.remef.df) +
+  geom_point()
+ggplot(aes(x = r_fh, y = fh/(1 + sample_wt)), data = concept.remef.df) +
+  geom_point()
+```
+
+
+
+# REMEF for Interspecific Boxplots
+```{r}
+interspec.remef.df <- concept.remef.df %>% 
+  drop_na(lfm, dmc, branching, start_temp, leaf_mass_ratio)
+
+# mixed effects models
+fh_is_mod <- lmer(fh ~ branching + lfm*sample_wt + (1|plant_id), data = interspec.remef.df, REML = F) # remef is also sensitive to NAs
+fd_is_mod <- lmer(fd ~ dmc*sample_wt + species + (1|plant_id), data = interspec.remef.df, REML = F) # remef is also sensitive to NAs
+temp_is_mod <- lmer(temp_change ~ start_temp*sample_wt + branching + (1|plant_id), data = interspec.remef.df, REML = F) # remef is also sensitive to NAs
+hf_is_mod <- lmer(heat_flux_change ~ leaf_mass_ratio*sample_wt + species + (1|plant_id), data = interspec.remef.df, REML = F) # remef is also sensitive to NAs
+
+# remef
+interspec.remef.df$r_fh <- remef(fh_is_mod, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE)
+interspec.remef.df$r_fd <- remef(fd_is_mod, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE)
+interspec.remef.df$r_temp_change <- remef(temp_is_mod, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE)
+interspec.remef.df$r_heat_flux_change <- remef(hf_is_mod, fix = c('sample_wt'), ran = "all", keep.intercept = FALSE)
+
+# dataframe
+interspec.df <- interspec.remef.df %>% 
+  select(species, ignition, prop_ig, fh, fd, temp_change, heat_flux_change, r_fh, r_fd, r_temp_change, r_heat_flux_change, plant)
+write.csv(interspec.df, here('data', 'processed-data', 'interspecific_flam_remef.csv'))
+```
+
+
+```{r}
+summary(fh_is_mod)
+plot(fh_is_mod)
+qqnorm(residuals(fh_is_mod))
+
+summary(fd_is_mod)
+plot(fd_is_mod)
+qqnorm(residuals(fd_is_mod))
+
+summary(temp_is_mod)
+plot(temp_is_mod)
+qqnorm(residuals(temp_is_mod))
+
+summary(hf_is_mod)
+plot(hf_is_mod)
+qqnorm(residuals(hf_is_mod))
+```
+

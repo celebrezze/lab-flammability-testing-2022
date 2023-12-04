@@ -1,0 +1,1259 @@
+---
+title: "Species Differences, Looking at Species-Specific Variables, Average Values
+  for Species"
+author: "Joe Celebrezze"
+date: "2023-07-17"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(here)
+library(multcompView) # to display Tukey-Kramer results
+library(factoextra) #for k-means clustering
+library(lme4) # for MEM
+library(emmeans) # for tukey-kramer tests (w/ random effects)
+library(ggpubr)
+
+here = here::here
+alpha = scales::alpha
+select = dplyr::select
+
+# reading in data
+flamm.df <- read.csv(here('data', 'processed-data', 'main_dataset.csv')) %>% 
+  mutate(species = as.factor(species)) %>% 
+  unite('species_id', c(species, plant), sep = '_', remove = F) # adding species_id for random effects
+```
+
+```{r}
+flamm.df %>% 
+  select(species, sample_wt) %>% 
+  group_by(species) %>% 
+  dplyr::summarise(sw = mean(sample_wt))
+
+flamm.df %>% 
+  drop_na(fd, fh, temp_change, heat_flux_change) %>% 
+  group_by(species) %>% 
+  dplyr::summarise(fd = mean(fd), fh = mean(fh),
+                   temp_change = mean(temp_change), heat_flux_change = mean(heat_flux_change))
+```
+
+
+Although the mixed effects model selection tells us a lot about our data and provides useful insights, it doesn't include all of the variables and it leaves some of our question unanswered:
+
+*Question*: How can interspecific differences in flammability be described by plant traits -- plant hydration, plant morphology, leaf traits, VOC's?
+
+With the mixed effects models, we looked into which variables were key in predicting the flammability metrics, but we did not necessarily look into how the above question fully. To do so, let's look at interspecific differences in flammability metrics and then interspecific differences in traits of interest and compare them.
+
+We are also going to do the k-means cluster analysis here on a full dataset, a dataset with flammability metrics, and a dataset with traits to try and get at the question above
+
+# Boxplots, ANOVAs
+
+## Flammability Metrics
+
+### Flame Height
+```{r}
+fh.spp <- lmer(fh ~ species + (1|species_id), data = flamm.df)
+anova(fh.spp) # p < 0.00001
+fh.spp.tukey <- emmeans(fh.spp, pairwise ~ species, adjust = 'tukey')
+fh.spp.tukey.df <- summary(fh.spp.tukey$contrasts)
+fh.spp.tukey.labels <- data.frame(species = c('HETARB', 'CEAGRI', 'SALAPI', 'MALLAU', 'SALLEU', 'ARCDEN', 'ARTCAL', 'ERIKAR'), letters = c('a', 'ab', 'ab', 'ab', 'ab', 'abc', 'bc', 'c'), adj = c(0, 0, 4, 4, 0, 4, 0, 4)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+fh.boxplot <- flamm.df %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU', 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = fh, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = fh, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 65 + adj, label = letters), fontface = 'bold',
+              data = fh.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Flame Height (cm)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+fh.boxplot
+```
+
+#### Graphical Abstract Version
+```{r}
+flamm.df %>%
+  filter(species %in% c('CEAGRI', 'SALAPI', 'ARTCAL', 'ERIKAR')) %>% 
+  mutate(species = case_when(species == 'CEAGRI' ~ 'C. griseus',
+                             species == 'SALAPI' ~ 'S. apiana',
+                             species == 'ARTCAL' ~ 'A. californica',
+                             species == 'ERIKAR' ~ 'E. karvinskianus')) %>% 
+  mutate(species = fct_relevel(species, c('C. griseus', 'S. apiana',
+                                          'A. californica', 'E. karvinskianus'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = fh), outlier.shape = NA, alpha= 0.8, fill = 'gray80') +
+    geom_jitter(aes(x = species, y = fh), width = 0.2, alpha = 0.2) +
+    labs(x = 'Species', y = 'Flame Height (cm)') +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 24),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(face = 'bold.italic', size = 22,
+                                     angle = 15, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 18))
+```
+
+
+### Flame Duration
+```{r}
+fd.spp <- lmer(fd ~ species + (1|species_id), data = flamm.df)
+anova(fd.spp) # p < 0.00001
+fd.spp.tukey <- emmeans(fd.spp, pairwise ~ species, adjust = 'tukey')
+fd.spp.tukey.df <- summary(fd.spp.tukey$contrasts)
+fd.spp.tukey.labels <- data.frame(species = c('CEAGRI', 'MALLAU', 'HETARB', 'SALLEU', 'ARCDEN', 'SALAPI', 'ARTCAL', 'ERIKAR'), letters = c('ab', 'a', 'ab', 'abc', 'abcd', 'bcd', 'cd', 'd'), adj = c(0, 4, 0, 0, 4, 4, 0, 4)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+fd.boxplot <- flamm.df %>%
+  filter(fd < 70) %>% 
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = fd, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = fd, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 59.5 + adj, label = letters), fontface = 'bold',
+              data = fd.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Flame Duration (sec)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+fd.boxplot
+```
+
+### Temp. Change
+```{r}
+tc.spp <- lmer(temp_change ~ species + (1|species_id), data = flamm.df)
+anova(tc.spp) # p < 0.00001
+tc.spp.tukey <- emmeans(tc.spp, pairwise ~ species, adjust = 'tukey')
+tc.spp.tukey.df <- summary(tc.spp.tukey$contrasts)
+tc.spp.tukey.labels <- data.frame(species = c('HETARB', 'MALLAU', 'SALLEU', 'SALAPI', 'CEAGRI', 'ARCDEN', 'ARTCAL', 'ERIKAR'), letters = c('a', 'ab', 'ab', 'ab', 'ab', 'ab', 'b', 'b'),
+                                  adj = c(0, 3, 0, 3, 0, 3, 0, 3)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+tc.boxplot <- flamm.df %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  filter(temp_change < 100) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = temp_change, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = temp_change, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 38 + adj, label = letters), fontface = 'bold',
+              data = tc.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Temp. Change (°C)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+tc.boxplot
+```
+
+### Heat Flux Change
+```{r}
+hf.spp <- lmer(heat_flux_change ~ species + (1|species_id), data = flamm.df)
+anova(hf.spp) # p < 0.00001
+hf.spp.tukey <- emmeans(hf.spp, pairwise ~ species, adjust = 'tukey')
+hf.spp.tukey.df <- summary(hf.spp.tukey$contrasts)
+hf.spp.tukey.labels <- data.frame(species = c('HETARB', 'SALAPI', 'MALLAU', 'CEAGRI', 'SALLEU', 'ARCDEN', 'ARTCAL', 'ERIKAR'), letters = c('a', 'ab', 'ab', 'abc', 'bc', 'bc', 'bc', 'c'), adj = c(0, 100, 100, 0, 0, 100, 0, 100)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+hf.boxplot <- flamm.df %>%
+  #filter(heat_flux_change < 0.3) %>% 
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = heat_flux_change, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = heat_flux_change, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 6000 + adj, label = letters), fontface = 'bold',
+              data = hf.spp.tukey.labels, size = 6) +
+    #scale_y_continuous(breaks = c(0.05, 0.1, 0.15, 0.20)) +
+    labs(x = 'Species', y = expression(bold("Heat Flux "(W/m^2)))) +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title.y = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+hf.boxplot
+```
+
+## Traits
+
+### Sample Weight
+Because all of the 'sample size' metrics are pretty similar, I think looking at only one, at least for now will work. Wet weight has been instrumental in previous analyses, so we will use it below
+```{r}
+sw.spp <- lmer(sample_wt ~ species + (1|species_id), data = flamm.df)
+anova(sw.spp) # p < 0.00001
+sw.spp.tukey <- emmeans(sw.spp, pairwise ~ species, adjust = 'tukey')
+sw.spp.tukey.df <- summary(sw.spp.tukey$contrasts)
+sw.spp.tukey.labels <- data.frame(species = c('HETARB', 'MALLAU', 'SALAPI', 'CEAGRI', 'SALLEU', 'ARCDEN',  'ARTCAL', 'ERIKAR'), letters = c('a', 'ab', 'bc', 'cd', 'd', 'cd', 'd', 'd'), 
+                                  adj = c(0, 1.7, 1.7, 0, 0, 1.7, 0, 1.7)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+sw.boxplot <- flamm.df %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = sample_wt, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = sample_wt, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 24.6 + adj, label = letters), fontface = 'bold',
+              data = sw.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Sample Weight (g)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+sw.boxplot
+```
+
+### MPa
+```{r}
+mpa.spp <- lmer(mpa ~ species + (1|species_id), data = flamm.df)
+anova(mpa.spp) # p < 0.00001
+mpa.spp.tukey <- emmeans(mpa.spp, pairwise ~ species, adjust = 'tukey')
+mpa.spp.tukey.df <- summary(mpa.spp.tukey$contrasts)
+mpa.spp.tukey.labels <- data.frame(species = c('CEAGRI', 'ARTCAL', 'ERIKAR', 'HETARB', 'MALLAU', 'SALLEU', 'ARCDEN', 'SALAPI'), letters = c('a', 'b', 'bc', 'bc', 'bc', 'bc', 'bc', 'c'), adj = c(0, 0, 0.025, 0, 0.025, 0, 0.025, 0.025)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+mpa.boxplot <- flamm.df %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = mpa, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = mpa, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 0.41 + adj, label = letters), fontface = 'bold',
+              data = mpa.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Water Potential (-MPa)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+mpa.boxplot
+```
+
+### Branching
+```{r}
+branching.spp <- lmer(branching ~ species + (1|species_id), data = flamm.df)
+anova(branching.spp) # p < 0.00001
+branching.spp.tukey <- emmeans(branching.spp, pairwise ~ species, adjust = 'tukey')
+branching.spp.tukey.df <- summary(branching.spp.tukey$contrasts)
+branching.spp.tukey.labels <- data.frame(species = c('CEAGRI', 'ARCDEN', 'SALLEU', 'ARTCAL', 'MALLAU', 'HETARB', 'ERIKAR', 'SALAPI'), letters = c('a', 'ab', 'abc', 'ab', 'abcd', 'bcd', 'd', 'cd'),
+                                         adj = c(0, 0.035, 0, 0, 0.035, 0, 0.035, 0.035)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+branching.boxplot <- flamm.df %>%
+  filter(branching < 0.75) %>% 
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = branching, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = branching, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 0.65 + adj, label = letters), fontface = 'bold',
+              data = branching.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Branching') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+branching.boxplot
+```
+
+### Starting Temp
+```{r}
+st.spp <- lmer(start_temp ~ species + (1|species_id), data = flamm.df)
+anova(st.spp) # p < 0.00001
+st.spp.tukey <- emmeans(st.spp, pairwise ~ species, adjust = 'tukey')
+st.spp.tukey.df <- summary(st.spp.tukey$contrasts)
+st.spp.tukey.labels <- data.frame(species = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                              'ARCDEN', 'ARTCAL', 'ERIKAR'),
+                                  letters = c('b', 'b', 'ab', 'b', 'b', 'ab', 'a', 'ab'),
+                                  adj = c(0, 6, 0, 6, 0, 6, 0, 6)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+
+flamm.df %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = start_temp, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = start_temp, color = species), width = 0.2, alpha = 0.2) +
+    labs(x = 'Species', y = 'Start Temp.') +
+    geom_text(aes(x = species, y = 240 + adj, label = letters), fontface = 'bold',
+              data = st.spp.tukey.labels, size = 6) +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+```
+
+### LFM
+```{r}
+lfm.boxplot <- flamm.df %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = lfm, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = lfm, color = species), width = 0.2, alpha = 0.2) +
+    labs(x = 'Species', y = 'Live Fuel Moisture (%)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+lfm.boxplot
+```
+
+### DMC
+```{r}
+dmc.boxplot <- flamm.df %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = dmc, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = dmc, color = species), width = 0.2, alpha = 0.2) +
+    labs(x = 'Species', y = 'Dry Matter Content (%)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+dmc.boxplot
+```
+
+### Leaf Mass Ratio
+```{r}
+lmr.boxplot <- flamm.df %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = leaf_mass_ratio, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = leaf_mass_ratio, color = species), width = 0.2, alpha = 0.2) +
+    labs(x = 'Species', y = 'Leaf Mass Ratio (%)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+lmr.boxplot
+```
+
+### Avg. VOC Emissions
+```{r}
+flamm.df %>%
+  filter(species != 'ARCDEN') %>% 
+  dplyr::group_by(species) %>% 
+  dplyr::summarise(avg_voc = mean(avg_voc)) %>% 
+  ggplot() +
+    geom_point(aes(x = species, y = log(avg_voc), color = species), size = 7, alpha = 0.7) +
+    labs(x = 'Species', y = 'Avg. VOCs (log-transformed)') +
+  scale_color_manual(values = c("#925E9FB2", "#AD002AB2", "#42B540B2", "#ADB6B6B2", '#1B1919B2', "#ED0000B2", "#0099B4B2")) +
+    theme_bw() +
+    theme(legend.position = 'none', 
+          axis.title = element_text(face = 'bold', size = 17),
+          axis.text.x = element_text(size = 12, angle = 10, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+ggsave(here('figures', 'spp.voc.png'), height = 5, width = 9)
+```
+
+## Arranging
+```{r}
+# blank figure
+blank <- ggplot(data = flamm.df, aes(x = species, y = mpa)) +
+  theme_void()
+blank
+
+# abridged version
+top <- ggarrange(fh.boxplot, fd.boxplot, hf.boxplot,
+          labels = c('A', 'B', 'C'),
+          font.label = list(size = 28), ncol = 3, nrow = 1)
+top
+
+bottom <- ggarrange(blank, tc.boxplot, sw.boxplot, blank,
+          labels = c('', 'D', 'E', ''),
+          font.label = list(size = 28),
+          widths = c(0.48, 1, 1, 0.48), ncol = 4, nrow = 1)
+bottom
+
+ggarrange(top, bottom, nrow = 2, ncol = 1)
+ggsave(here('figures', 'main_figures', 'five.panel.spp.boxplots.png'), height = 9, width = 13.5) # height was 9 w/ two rows
+
+# expanded version
+ggarrange(fh.boxplot, fd.boxplot, hf.boxplot, tc.boxplot, sw.boxplot, branching.boxplot, lfm.boxplot, dmc.boxplot, lmr.boxplot,
+          labels = c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'),
+          font.label = list(size = 28), ncol = 3, nrow = 3)
+
+
+ggsave(here('figures', 'main_figures', 'spp.boxplots.png'), height = 14, width = 13.5) # height was 9 w/ two rows
+```
+
+
+# K-means Clustering
+## Flamm Metrics
+NOTE: Ignition method has significant effect on clustering
+```{r}
+id <- c(1:nrow(flamm.df))
+flamm.df <- cbind(flamm.df, id) %>% 
+  unite('species_id', c(species, id), remove = F)
+
+# so it's replicable
+set.seed(12)
+
+# labels
+flam_labels <- c('Flame Height', 'Flame Duration', 'Temperature Change', 'Heat Flux Change', '% Ignited')
+names(flam_labels) <- c('fh', 'fd', 'temp_change', 'heat_flux_change', 'prop_ig')
+
+# prepping dataset
+flamm_kmeans_df <- flamm.df %>% 
+  filter(ignition != 0) %>% 
+  filter(temp_change < 100) %>% 
+  select(species_id, species, ignition, fh, fd, temp_change, heat_flux_change, prop_ig) %>% 
+  na.omit()
+
+rownames(flamm_kmeans_df) <- flamm_kmeans_df$species_id
+
+flamm_kmeans_scaled_df <- flamm_kmeans_df %>% 
+  select(-c(species_id, species, ignition)) %>%
+  scale() %>% 
+  as.data.frame()
+
+# optimal number of clusters
+# 2 ways to determine optimal cluster 
+# 1. optimal cluster at the elbow
+fviz_nbclust(flamm_kmeans_scaled_df, kmeans, method = "wss") # k = 3 or k = 4
+# 2. silhouette method
+fviz_nbclust(flamm_kmeans_scaled_df, kmeans, method = "silhouette") #k = 2
+
+# run k-means clustering
+#perform k-means clustering with k = 3 clusters
+km <- kmeans(flamm_kmeans_scaled_df, centers = 3)
+km$cluster <- case_when(km$cluster == 1 ~ 2,
+                         km$cluster == 2 ~ 1,
+                         km$cluster == 3 ~ 3)
+#plot results of final k-means model
+fviz_cluster(km, data = flamm_kmeans_scaled_df)
+#add cluster assigment to original data
+flamm_kmeans_df <- cbind(flamm_kmeans_df, cluster = km$cluster)
+#merging with dataseet w/ plant traits (flamm.df) to visualize how clusters track plant traits
+comp_kmeans_df <- merge(flamm_kmeans_df, flamm.df, by = 'species_id')
+
+#visualizing how cluster assignment tracks species
+flamm_kmeans_df %>% 
+  ggplot(aes(x = species, y = cluster, color = as.factor(cluster))) +
+    geom_jitter(width = 0.1, height = 0.1) +
+    scale_y_continuous(breaks = c(1:max(flamm_kmeans_df$cluster))) +
+    theme_bw() +
+    labs(x = ' ', y = 'Cluster #', color = 'Cluster #', title = 'K-Means Clustering: Flam. Metrics')
+
+flamm_kmeans_df %>% 
+  ggplot(aes(x = cluster, fill = species)) +
+    geom_bar() +
+    theme_bw() +
+    labs(x = 'Cluster #', fill = 'Species', y = 'Count', title = 'K-Means Clustering: Flam. Metrics')
+
+flamm_kmeans_df %>% 
+  pivot_longer(cols = c(fd, fh, heat_flux_change, temp_change, prop_ig), names_to = 'var', values_to = 'val') %>% 
+  ggplot(aes(x = as.factor(cluster), y = val, color = as.factor(cluster))) +
+    geom_boxplot(outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(width = 0.2, alpha = 0.2) +
+    facet_wrap(~var, scales = 'free', labeller = labeller(var = flam_labels)) +
+    labs(x = 'K-Means Cluster', y = 'Flamm. Metric Value') +
+    scale_color_manual(values = c("#00468BB2", 'black', "#42B540B2")) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 17),
+          axis.text = element_text(size = 15),
+          strip.text = element_text(face = 'bold', size = 15))
+
+flamm_kmeans_df %>% 
+  group_by(cluster, species) %>% 
+  tally() %>%  
+  pivot_wider(names_from = cluster, values_from = n) %>% 
+  mutate(`1` = ifelse(is.na(`1`), 0, `1`),
+         `2` = ifelse(is.na(`2`), 0, `2`)) %>% 
+  mutate(kmeans.flam.index = (`2`)/(`2` + `1`)) %>% 
+  mutate(species = fct_relevel(species, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot(aes(x = species, y = kmeans.flam.index, color = species)) +
+    geom_point(size = 7) +
+    labs(x = 'Species', y = 'K-Means Clustering: Combustibility Index') +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 14),
+          axis.text = element_text(size = 13),
+          axis.text.x = element_text(angle = 15))
+
+flamm_kmeans_df %>% 
+  group_by(ignition, cluster) %>% 
+  tally()
+
+ignition.vs.cluster <- lm(cluster ~ ignition, data = flamm_kmeans_df)
+anova(ignition.vs.cluster)
+summary(ignition.vs.cluster)
+
+# how do plant traits relate to flam. clusters?
+comp_kmeans_df %>% 
+  pivot_longer(cols = c(lfm, mpa, dmc, sample_wt), names_to = 'var', values_to = 'val') %>% 
+  ggplot(aes(x = as.factor(cluster), y = val, color = as.factor(cluster))) +
+    geom_boxplot(outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(width = 0.2, alpha = 0.2) +
+    facet_wrap(~var, scales = 'free') +
+    labs(x = 'K-Means Cluster', y = 'Predictor Value') +
+    scale_color_manual(values = c("#00468BB2", 'black', "#42B540B2")) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 17),
+          axis.text = element_text(size = 15),
+          strip.text = element_text(face = 'bold', size = 15))
+```
+
+### Nice Figures
+Alternative boxplot and reworking above figures to arrange:
+```{r}
+km_boxplot_flam <- comp_kmeans_df %>% 
+  mutate(fh = scale(fh.x), fd = scale(fd.x), temp_change = scale(temp_change.x), heat_flux_change = scale(heat_flux_change.x), prop_ig = scale(prop_ig.x), lfm = scale(lfm), branching = scale(branching), leaf_sav = scale(leaf_sav), dmc = scale(dmc), sample_wt = scale(sample_wt)) %>% 
+  pivot_longer(cols = c(fh, fd, temp_change, heat_flux_change, prop_ig, lfm, branching, leaf_sav, dmc, sample_wt), names_to = 'var', values_to = 'val') %>% 
+  mutate(var = case_when(
+    var == 'fh' ~ 'Flame Height',
+    var == 'fd' ~ 'Flame Duration',
+    var == 'heat_flux_change' ~ 'Heat Flux Change',
+    var == 'temp_change' ~ 'Temp. Change',
+    var == 'prop_ig' ~ 'Proportion Ignited',
+    var == 'lfm' ~ 'Live Fuel Moisture',
+    var == 'sample_wt' ~ 'Sample Weight',
+    var == 'dmc' ~ 'Dry Mass Content',
+    var == 'branching' ~ 'Branching',
+    var == 'leaf_sav' ~ 'Leaf SA:Volume')) %>%
+    mutate(var = fct_relevel(var, levels = c('Flame Height', 'Flame Duration', 'Heat Flux Change',
+                                                   'Temp. Change', 'Proportion Ignited', 'Live Fuel Moisture',
+                                                   'Sample Weight', 'Dry Mass Content', 'Branching',
+                                                   'Leaf Surface Area:Volume'))) %>% 
+  ggplot(aes(x = var, y = val, color = as.factor(cluster))) +
+    geom_boxplot(alpha= 0.8) +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.text.x = element_text(face = 'bold', size = 15, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.title = element_blank(),
+          axis.text.y = element_text(size = 15))
+km_boxplot_flam
+
+# Species vs. clusters
+number_pts_per_cluster <- comp_kmeans_df %>% 
+  dplyr::group_by(species.x, cluster) %>% 
+  tally()
+
+spp_vs_flamkm <- comp_kmeans_df %>% 
+  mutate(species = fct_relevel(species.x, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot(aes(x = species, y = cluster, color = as.factor(cluster))) +
+    geom_jitter(width = 0.1, height = 0.1) +
+    geom_text(aes(x = species.x, y = cluster + 0.25, color = as.factor(cluster), label = n),
+                  data = number_pts_per_cluster, fontface = 'bold', size = 5.5) +
+    annotate('text', x = 0.55, y = 1, label = 'High', angle = 90, fontface = 'bold',
+             size = 5.5, color = "#00468BB2") +
+    annotate('text', x = 0.95, y = 2, label = 'Combustibility/\nSustainability', angle = 90, fontface = 'bold',
+             size = 5.5, color = "#ED0000B2") +
+    annotate('text', x = 0.55, y = 3, label = 'Low', angle = 90, fontface = 'bold',
+             size = 5.5, color = "#42B540B2") +
+    annotate('text', x = 9, y = 2, label = 'Most Ignitable', angle = 270, fontface = 'bold',
+             size = 5.5, color = "#ED0000B2") +
+    geom_segment(aes(x = 0.55, y = 1.6, xend = 0.55, yend = 1.2),
+                  arrow = arrow(length = unit(0.2, "cm")), color = "#00468BB2") +
+    geom_segment(aes(x = 0.55, y = 1.6, xend = 0.55, yend = 2.4), color = "#ED0000B2") +
+    geom_segment(aes(x = 0.55, y = 2.4, xend = 0.55, yend = 2.8),
+                  arrow = arrow(length = unit(0.2, "cm")), color = "#42B540B2") +
+    scale_y_continuous(breaks = c(1:max(comp_kmeans_df$cluster))) +
+    theme_bw() +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+    theme(legend.position = 'none',
+          axis.title = element_blank(),
+          axis.text.y = element_blank(), 
+          axis.ticks.y = element_blank(),
+          axis.text.x = element_text(face = 'bold', size = 16, angle = 20, vjust = 0.9, hjust=0.75),
+          panel.grid.minor = element_blank())
+spp_vs_flamkm    
+      
+# Cluster plot          
+km_clustflam_plot <- fviz_cluster(km, data = flamm_kmeans_scaled_df, geom = 'point', pointsize = 1.75, show.clust.cent = F, ellipse.type = 'norm') +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+  scale_fill_manual(values = c(alpha("#00468BB2", 0.5), alpha('#ED0000B2', 0.5), alpha('#42B540B2', 0.5))) +
+  theme_bw() +
+  labs(color = 'K-Means Cluster', shape = 'K-Means Cluster', fill = 'K-Means Cluster') +
+  theme(plot.title = element_blank(),
+        legend.position = 'none',
+        axis.title = element_text(face = 'bold', size = 17),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid.major = element_blank(),  # Hide gridlines
+        panel.grid.minor = element_blank())
+km_clustflam_plot
+```
+
+### Arranging/Legend
+```{r}
+# For legend
+km_leg_plot <- comp_kmeans_df %>% 
+  ggplot(aes(x = cluster, y = lfm, color = as.factor(cluster))) +
+  geom_point(shape = 'square', size = 5) +
+  labs(color = 'K-Means Cluster') +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+  theme_bw() +
+  theme(legend.position = 'top',
+        legend.title = element_text(face = 'bold', size = 25),
+        legend.text = element_text(size = 20))
+km_leg_plot
+km_legend <- cowplot::get_legend(km_leg_plot)
+
+mid <- cowplot::plot_grid(km_clustflam_plot, spp_vs_flamkm, rel_widths = c(1, 2.5), labels = c('A', 'B'), label_size = 24)
+mid
+
+arranged <- cowplot::plot_grid(km_legend, mid, km_boxplot_flam, rel_heights = c(1, 5, 5), ncol = 1, labels = c(' ', ' ', 'C'), label_size = 24)
+arranged
+
+ggsave(here('figures', 'main_figures', 'flam_kmeans_cluster_arranged_figure.png'), height = 10, width = 18)
+```
+
+## Leaf Traits
+```{r}
+# labels
+traits_labels <- c('Live Fuel Moisture (%)', 'Water Potential (-MPa)', 'Sample Weight (g)', 'Leaf Mass per Area', 'Leaf Thickness (mm)', 'Branching', 'Leaf Mass Ratio', 'Sample Density (g/cm3)', 'Sample Volume (cm3)')
+names(traits_labels) <- c('lfm', 'mpa', 'sample_wt', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'sample_density', 'branch_volume')
+
+# prepping dataset
+traits_kmeans_df <- flamm.df %>% 
+  filter(ignition != 0) %>% 
+  select(species, species_id, ignition, lfm, mpa, sample_wt, LMA, thickness, branching, leaf_mass_ratio, sample_density, branch_volume) %>% 
+  na.omit()
+
+rownames(traits_kmeans_df) <- traits_kmeans_df$species_id
+
+traits_kmeans_scaled_df <- traits_kmeans_df %>% 
+  select(-c(species_id, species, ignition)) %>% 
+  scale() %>% 
+  as.data.frame()
+
+# optimal number of clusters
+# 2 ways to determine optimal cluster 
+# 1. optimal cluster at the elbow
+fviz_nbclust(traits_kmeans_scaled_df, kmeans, method = "wss") #k = 3 or 4
+# 2. silhouette method
+fviz_nbclust(traits_kmeans_scaled_df, kmeans, method = "silhouette") #k = 4, 6, 8 or 10
+
+# run k-means clustering
+#perform k-means clustering with k = 3 clusters
+km <- kmeans(traits_kmeans_scaled_df, centers = 3)
+#plot results of final k-means model
+fviz_cluster(km, data = traits_kmeans_scaled_df)
+#add cluster assigment to original data
+traits_kmeans_df <- cbind(traits_kmeans_df, cluster = km$cluster)
+
+#visualizing how cluster assignment tracks species
+traits_kmeans_df %>% 
+  ggplot(aes(x = species, y = cluster, color = as.factor(cluster))) +
+    geom_jitter(width = 0.1, height = 0.1) +
+    scale_y_continuous(breaks = c(1:max(traits_kmeans_df$cluster))) +
+    theme_bw() +
+    labs(x = ' ', y = 'Cluster #', color = 'Cluster #', title = 'K-Means Clustering: Plant Traits')
+
+traits_kmeans_df %>% 
+  ggplot(aes(x = cluster, fill = species)) +
+    geom_bar() +
+    theme_bw() +
+    labs(x = 'Cluster #', fill = 'Species', y = 'Count', title = 'K-Means Clustering: Plant Traits')
+
+traits_kmeans_df %>% 
+  pivot_longer(cols = c(lfm, mpa, sample_density, LMA, thickness, branching, leaf_mass_ratio, sample_wt, branch_volume), names_to = 'var', values_to = 'val') %>% 
+  ggplot(aes(x = as.factor(cluster), y = val, color = as.factor(cluster))) +
+    geom_boxplot(outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(width = 0.2, alpha = 0.2) +
+    facet_wrap(~var, scales = 'free', labeller = labeller(var = traits_labels)) +
+    labs(x = 'K-Means Cluster', y = 'Traits Value') +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 17),
+          axis.text = element_text(size = 15),
+          strip.text = element_text(face = 'bold', size = 15))
+```
+
+## Traits and Flammability
+```{r}
+# labels
+kmeans_labels <- c('Flame Height', 'Flame Duration', 'Temperature Change', 'Heat Flux Change', 'Live Fuel Moisture (%)', 'Water Potential (-MPa)', 'Sample Weight (g)', 'Leaf Mass per Area', 'Branching', 'Sample Density (g/cm3)')
+names(kmeans_labels) <- c('fh', 'fd', 'temp_change', 'heat_flux_change', 'lfm', 'mpa', 'sample_wt', 'LMA', 'branching', 'sample_density')
+
+# prepping dataset
+kmeans_df <- flamm.df %>% 
+  filter(ignition != 0) %>% 
+  select(species, species_id, ignition, fh, fd, temp_change, heat_flux_change, lfm, mpa, sample_wt, LMA, branching, sample_density, species_id) %>% 
+  na.omit()
+
+rownames(kmeans_df) <- kmeans_df$species_id
+
+kmeans_scaled_df <- kmeans_df %>% 
+  select(-c(species_id, species, ignition, species_id)) %>% 
+  scale() %>% 
+  as.data.frame()
+
+# optimal number of clusters
+# 2 ways to determine optimal cluster 
+# 1. optimal cluster at the elbow
+fviz_nbclust(kmeans_scaled_df, kmeans, method = "wss") #k = 2 or 3
+# 2. silhouette method
+fviz_nbclust(kmeans_scaled_df, kmeans, method = "silhouette") #k = 2
+
+# run k-means clustering
+#perform k-means clustering with k = 3 clusters
+km <- kmeans(kmeans_scaled_df, centers = 2)
+
+#plot results of final k-means model
+fviz_cluster(km, data = kmeans_scaled_df) +
+  scale_color_manual(values = c("#00468BB2", "#42B540B2")) +
+  scale_fill_manual(values = c(alpha("#00468BB2", 0.5), alpha("#42B540B2", 0.5))) +
+  theme_bw() +
+  labs(color = 'K-Means Cluster', shape = 'K-Means Cluster', fill = 'K-Means Cluster') +
+  theme(plot.title = element_blank(),
+        legend.title = element_text(face = 'bold', size = 18),
+        legend.text = element_text(size = 16),
+        legend.position = c(0.15, 0.15),
+        axis.title = element_text(face = 'bold', size = 17),
+        axis.text = element_text(size = 15))
+ggsave(here('figures', 'main_figures', 'traits.flam.k.means.cluster.png'), width = 10, height = 7)
+
+#add cluster assigment to original data
+kmeans_df <- cbind(kmeans_df, cluster = km$cluster)
+
+#visualizing how cluster assignment tracks species
+kmeans_df %>% 
+  mutate(species = fct_relevel(species, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot(aes(x = species, y = cluster, color = as.factor(cluster))) +
+    geom_jitter(width = 0.1, height = 0.1) +
+    scale_y_continuous(breaks = c(1:max(traits_kmeans_df$cluster))) +
+    labs(x = 'Species', y = 'K-Means Cluster', color = 'Cluster #') +
+    theme_bw() +
+    scale_color_manual(values = c("#00468BB2", "#42B540B2")) +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.text.y = element_text(size = 16), 
+          axis.text.x = element_text(size = 14, angle = 20))
+ggsave(here('figures', 'main_figures', 'spp.vs.k.means.cluster.png'), height = 4.5, width = 9)
+
+kmeans_df %>% 
+  ggplot(aes(x = cluster, fill = species)) +
+    geom_bar() +
+    theme_bw() +
+    labs(x = 'Cluster #', fill = 'Species', y = 'Count', title = 'K-Means Clustering')
+
+plot.labels.df <- data.frame(var = c('branching', 'fd', 'fh', 'heat_flux_change', 'lfm', 'LMA', 'mpa', 'sample_density', 'sample_wt', 'temp_change'), label = c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'))
+
+#val = c(0.5, 95, 65, 0.23, 375, 0.265, 0.42, 0.235, 23.5, 38), cluster = c(rep(1, 10)),
+
+kmeans_df %>% 
+  filter(heat_flux_change < 0.3, sample_density < 0.4, temp_change < 50) %>% 
+  pivot_longer(cols = c(fh, fd, temp_change, heat_flux_change, lfm, mpa, sample_wt, LMA, branching, sample_density), names_to = 'var', values_to = 'val') %>% 
+  ggplot(aes(x = as.factor(cluster), y = val, color = as.factor(cluster))) +
+    geom_boxplot(outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(width = 0.2, alpha = 0.2) +
+    facet_wrap(~var, scales = 'free', labeller = labeller(var = kmeans_labels), ncol = 5) +
+    geom_text(data = plot.labels.df, mapping = aes(x = -Inf, y = -Inf, label = label),
+              color = 'black', hjust = -0.9, vjust = -11.2, size = 10, fontface = 'bold') +
+    labs(x = 'K-Means Cluster') +
+    scale_color_manual(values = c("#00468BB2", "#42B540B2")) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title.x = element_text(face = 'bold', size = 17),
+          axis.title.y = element_blank(),
+          axis.text = element_text(size = 15),
+          strip.text = element_text(face = 'bold', size = 15))
+ggsave(here('figures', 'main_figures', 'traits.flam.k.means.boxplot.png'), width = 17, height = 9)
+
+t.test(branching ~ cluster, data = kmeans_df) # sig. difference
+t.test(lfm ~ cluster, data = kmeans_df) # sig. difference
+t.test(mpa ~ cluster, data = kmeans_df) # sig. difference
+t.test(LMA ~ cluster, data = kmeans_df) # sig. difference
+t.test(sample_wt ~ cluster, data = kmeans_df) # sig. difference
+t.test(sample_density ~ cluster, data = kmeans_df) # sig. difference
+t.test(fh ~ cluster, data = kmeans_df) # sig. difference
+t.test(fd ~ cluster, data = kmeans_df) # sig. difference
+t.test(temp_change ~ cluster, data = kmeans_df) # sig. difference
+t.test(heat_flux_change ~ cluster, data = kmeans_df) # sig. difference
+```
+
+### Intermediates Between Clusters
+From above cluster plot, choosing samples that are in the 'intermediate space' between clusters (i.e., that area on the inner margins between the two clusters)
+```{r}
+kmeans_df <- kmeans_df %>% 
+  mutate(int_cluster = ifelse(species_id %in% c('SALAPI_217', 'SALAPI_215', 'SALAPI_214', 'SALAPI_201', 'SALAPI_212', 'SALAPI_199', 'SALAPI_197', 'SALLEU_230', 'SALLEU_252', 'SALLEU_245', 'SALLEU_219', 'SALLEU_225', 'SALLEU_224', 'SALLEU_223', 'SALLEU_253', 'SALLEU_256', 'SALLEU_232', 'SALLEU_251', 'SALLEU_246', 'SALLEU_247', 'SALLEU_231', 'MALLAU_185', 'MALLAU_171', 'MALLAU_169', 'MALLAU_168', 'MALLAU_183', 'MALLAU_172', 'MALLAU_175', 'MALLAU_182', 'CEAGRI_86', 'CEAGRI_78', 'CEAGRI_72', 'ARCDEN_187', 'ARCDEN_188', 'ARCDEN_189', 'ARCDEN_190', 'ARCDEN_192', 'ARCDEN_193', 'ARCDEN_195', 'HETARB_138', 'HETARB_136'), 1.5, cluster)
+  )
+
+# species differences
+kmeans_df %>% 
+  mutate(species = fct_relevel(species, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ERIKAR'))) %>% 
+  ggplot(aes(x = species, y = int_cluster, color = as.factor(int_cluster))) +
+    geom_jitter(width = 0.1, height = 0.1) +
+    scale_y_continuous(breaks = c(1:3)) +
+    labs(x = 'Species', y = 'K-Means Cluster', color = 'Cluster #') +
+    theme_bw() +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.text.y = element_text(size = 16), 
+          axis.text.x = element_text(size = 14, angle = 20))
+
+kmeans_df %>% 
+  filter(heat_flux_change < 0.3, sample_density < 0.4, temp_change < 50) %>% 
+  pivot_longer(cols = c(fh, fd, temp_change, heat_flux_change, lfm, mpa, sample_wt, LMA, branching, sample_density), names_to = 'var', values_to = 'val') %>% 
+  ggplot(aes(x = as.factor(int_cluster), y = val, color = as.factor(int_cluster))) +
+    geom_boxplot(outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(width = 0.2, alpha = 0.2) +
+    facet_wrap(~var, scales = 'free', labeller = labeller(var = kmeans_labels), ncol = 5) +
+    geom_text(data = plot.labels.df, mapping = aes(x = -Inf, y = -Inf, label = label),
+              color = 'black', hjust = -0.9, vjust = -11.2, size = 10, fontface = 'bold') +
+    labs(x = 'K-Means Cluster') +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title.x = element_text(face = 'bold', size = 17),
+          axis.title.y = element_blank(),
+          axis.text = element_text(size = 15),
+          strip.text = element_text(face = 'bold', size = 15))
+```
+
+## Traits and Flammability #2
+```{r}
+flamm.df %>% 
+  ggplot(aes(x = branch_volume, y = sample_density)) +
+    geom_point() +
+    theme_bw()
+
+flamm.df %>% 
+  ggplot(aes(x = sample_wt, y = sample_density)) +
+    geom_point() +
+    theme_bw()
+
+woohoo <- flamm.df %>% 
+  select(species, sample_wt, branch_volume, sample_density, branch_length, branch_height, branch_width)
+```
+
+
+```{r}
+set.seed(2)
+# labels
+kmeans_labels <- c('Flame Height', 'Flame Duration', 'Heat Flux Change', 'Live Fuel Moisture (%)', 'Dry Matter Content', 'Sample Weight (g)', 'Leaf Mass Ratio', 'Branching')
+names(kmeans_labels) <- c('fh', 'fd', 'heat_flux_change', 'lfm', 'dmc', 'sample_wt', 'leaf_mass_ratio', 'branching')
+
+# prepping dataset
+kmeans_df2 <- flamm.df %>% 
+  filter(ignition != 0) %>% 
+  select(species, species_id, ignition, fh, fd, heat_flux_change, lfm, mpa, sample_wt, leaf_mass_ratio, branching, species_id) %>% 
+  na.omit()
+
+rownames(kmeans_df2) <- kmeans_df2$species_id
+
+kmeans_scaled_df2 <- kmeans_df2 %>% 
+  select(-c(species_id, species, ignition)) %>% 
+  scale() %>% 
+  as.data.frame()
+
+# optimal number of clusters
+# 2 ways to determine optimal cluster 
+# 1. optimal cluster at the elbow
+fviz_nbclust(kmeans_scaled_df2, kmeans, method = "wss") #k = 3 or 4
+# 2. silhouette method
+fviz_nbclust(kmeans_scaled_df2, kmeans, method = "silhouette") #k = 2
+
+# run k-means clustering
+#perform k-means clustering with k = 2 clusters
+km <- kmeans(kmeans_scaled_df2, centers = 3)
+km$cluster <- case_when(km$cluster == 1 ~ 2,
+                         km$cluster == 2 ~ 1,
+                         km$cluster == 3 ~ 3)
+
+#plot results of final k-means model
+fviz_cluster(km, data = kmeans_scaled_df2) +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+  scale_fill_manual(values = c(alpha("#00468BB2", 0.5), alpha('#ED0000B2', 0.5), alpha('#42B540B2', 0.5))) +
+  theme_bw() +
+  labs(color = 'K-Means Cluster', shape = 'K-Means Cluster', fill = 'K-Means Cluster') +
+  theme(plot.title = element_blank(),
+        legend.title = element_text(face = 'bold', size = 18),
+        legend.text = element_text(size = 16),
+        legend.position = c(0.15, 0.15),
+        axis.title = element_text(face = 'bold', size = 17),
+        axis.text = element_text(size = 15))
+ggsave(here('figures', 'main_figures', 'traits.flam.k.means.cluster.no2.png'), width = 10, height = 7)
+
+#add cluster assigment to original data
+kmeans_df2 <- cbind(kmeans_df2, cluster = km$cluster)
+
+# number of points per species, per cluster
+number_pts_per_cluster <- kmeans_df2 %>% 
+  dplyr::group_by(species, cluster) %>% 
+  tally()
+
+#visualizing how cluster assignment tracks species
+kmeans_df2 %>% 
+  mutate(species = fct_relevel(species, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot(aes(x = species, y = cluster, color = as.factor(cluster))) +
+    geom_jitter(width = 0.1, height = 0.1) +
+    geom_text(aes(x = species, y = cluster + 0.25, color = as.factor(cluster), label = n),
+                  data = number_pts_per_cluster, fontface = 'bold') +
+    annotate('text', x = 0.55, y = 1.1, label = 'High Flam.', angle = 90, fontface = 'bold',
+             size = 3.5, color = "#00468BB2") +
+    annotate('text', x = 0.55, y = 2, label = 'Intermediate Flam.', angle = 90, fontface = 'bold',
+             size = 3.5, color = "#ED0000B2") +
+    annotate('text', x = 0.55, y = 3, label = 'Low Flam.', angle = 90, fontface = 'bold',
+             size = 3.5, color = "#42B540B2") +
+    scale_y_continuous(breaks = c(1:max(traits_kmeans_df$cluster))) +
+    labs(x = 'Species', y = 'K-Means Cluster', color = 'Cluster #') +
+    theme_bw() +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.text.y = element_text(size = 16), 
+          axis.text.x = element_text(size = 14, angle = 20, vjust = 0.9, hjust=0.75))
+ggsave(here('figures', 'main_figures', 'spp.vs.k.means.cluster.no2.png'), height = 4.5, width = 9)
+
+plot.labels.df <- data.frame(var = c('branching', 'fd', 'fh', 'heat_flux_change', 'leaf_mass_ratio', 'lfm', 'mpa', 'sample_wt'), label = c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'))
+
+kmeans_df2 %>% 
+  filter(heat_flux_change < 0.3) %>% 
+  pivot_longer(cols = c(fh, fd, heat_flux_change, lfm, mpa, sample_wt, leaf_mass_ratio, branching), names_to = 'var', values_to = 'val') %>% 
+  ggplot(aes(x = as.factor(cluster), y = val, color = as.factor(cluster))) +
+    geom_boxplot(outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(width = 0.2, alpha = 0.2) +
+    facet_wrap(~var, scales = 'free', labeller = labeller(var = kmeans_labels), ncol = 4) +
+    geom_text(data = plot.labels.df, mapping = aes(x = -Inf, y = -Inf, label = label),
+              color = 'black', hjust = -0.9, vjust = -11.2, size = 10, fontface = 'bold') +
+    labs(x = 'K-Means Cluster') +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title.x = element_text(face = 'bold', size = 17),
+          axis.title.y = element_blank(),
+          axis.text = element_text(size = 15),
+          strip.text = element_text(face = 'bold', size = 15))
+ggsave(here('figures', 'main_figures', 'traits.flam.k.means.boxplot.no2.png'), width = 17, height = 9)
+```
+
+Alternative boxplot and reworking above figures to arrange:
+```{r}
+km_boxplotV2 <- kmeans_df2 %>% 
+  filter(heat_flux_change < 0.3) %>% 
+  mutate(fh = scale(fh), fd = scale(fd), heat_flux_change = scale(heat_flux_change),
+         lfm = scale(lfm), mpa = scale(mpa), sample_wt = scale(sample_wt),
+         leaf_mass_ratio = scale(leaf_mass_ratio), branching = scale(branching)) %>% 
+  pivot_longer(cols = c(fh, fd, heat_flux_change, lfm, mpa, sample_wt, leaf_mass_ratio, branching),
+               names_to = 'var', values_to = 'val') %>% 
+  mutate(var = case_when(
+    var == 'fh' ~ 'Flame Height',
+    var == 'fd' ~ 'Flame Duration',
+    var == 'heat_flux_change' ~ 'Heat Flux Change',
+    var == 'lfm' ~ 'Live Fuel Moisture',
+    var == 'mpa' ~ 'Water Potential',
+    var == 'sample_wt' ~ 'Sample Weight',
+    var == 'leaf_mass_ratio' ~ 'Leaf Mass Ratio',
+    var == 'branching' ~ 'Branching')) %>%
+  ggplot(aes(x = var, y = val, color = as.factor(cluster))) +
+    geom_boxplot(alpha= 0.8) +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.text.x = element_text(face = 'bold', size = 15),
+          axis.title = element_blank(),
+          axis.text.y = element_text(size = 15))
+km_boxplotV2
+ggsave(here('figures', 'main_figures', 'traits.flam.k.means.boxplotV2.no2.png'), width = 16, height = 8)
+
+spp_vs_km <- kmeans_df2 %>% 
+  mutate(species = fct_relevel(species, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'IRIDOU', 'ERIKAR'))) %>% 
+  ggplot(aes(x = species, y = cluster, color = as.factor(cluster))) +
+    geom_jitter(width = 0.1, height = 0.1) +
+    geom_text(aes(x = species, y = cluster + 0.25, color = as.factor(cluster), label = n),
+                  data = number_pts_per_cluster, fontface = 'bold', size = 5.5) +
+    annotate('text', x = 0.55, y = 1, label = 'High', angle = 90, fontface = 'bold',
+             size = 5.5, color = "#00468BB2") +
+    annotate('text', x = 0.8, y = 2, label = 'Flammability', angle = 90, fontface = 'bold',
+             size = 5.5, color = "black") +
+    annotate('text', x = 0.55, y = 3, label = 'Low', angle = 90, fontface = 'bold',
+             size = 5.5, color = "#42B540B2") +
+    geom_segment(aes(x = 0.55, y = 1.6, xend = 0.55, yend = 1.2),
+                  arrow = arrow(length = unit(0.2, "cm")), color = "#00468BB2") +
+    geom_segment(aes(x = 0.55, y = 1.6, xend = 0.55, yend = 2.4), color = "#ED0000B2") +
+    geom_segment(aes(x = 0.55, y = 2.4, xend = 0.55, yend = 2.8),
+                  arrow = arrow(length = unit(0.2, "cm")), color = "#42B540B2") +
+    scale_y_continuous(breaks = c(1:max(traits_kmeans_df$cluster))) +
+    theme_bw() +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+    theme(legend.position = 'none',
+          axis.title = element_blank(),
+          axis.text.y = element_blank(), 
+          axis.ticks.y = element_blank(),
+          axis.text.x = element_text(face = 'bold', size = 16, angle = 20, vjust = 0.9, hjust=0.75),
+          panel.grid.minor = element_blank())
+spp_vs_km   
+                
+km_clust_plot <- fviz_cluster(km, data = kmeans_scaled_df2, geom = 'point', pointsize = 1.75, show.clust.cent = F, ellipse.type = 'norm') +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+  scale_fill_manual(values = c(alpha("#00468BB2", 0.5), alpha('#ED0000B2', 0.5), alpha('#42B540B2', 0.5))) +
+  theme_bw() +
+  labs(x = 'Dimension 1 (42.5%)', y = 'Dimension 2 (17.9%)', color = 'K-Means Cluster', shape = 'K-Means Cluster', fill = 'K-Means Cluster') +
+  theme(plot.title = element_blank(),
+        legend.position = 'none',
+        axis.title = element_text(face = 'bold', size = 17),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid.major = element_blank(),  # Hide gridlines
+        panel.grid.minor = element_blank())
+km_clust_plot
+```
+
+### Arranging/Legend
+```{r}
+# For legend
+km_leg_plot <- kmeans_df2 %>% 
+  ggplot(aes(x = cluster, y = lfm, color = as.factor(cluster))) +
+  geom_point(shape = 'square', size = 5) +
+  labs(color = 'K-Means Cluster') +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2")) +
+  theme_bw() +
+  theme(legend.position = 'top',
+        legend.title = element_text(face = 'bold', size = 25),
+        legend.text = element_text(size = 20))
+km_leg_plot
+km_legend <- cowplot::get_legend(km_leg_plot)
+
+mid <- cowplot::plot_grid(km_clust_plot, spp_vs_km, rel_widths = c(1, 2.5), labels = c('A', 'B'), label_size = 24)
+mid
+
+arranged <- cowplot::plot_grid(km_legend, mid, km_boxplotV2, rel_heights = c(1, 5, 5), ncol = 1, labels = c(' ', ' ', 'C'), label_size = 24)
+arranged
+
+ggsave(here('figures', 'main_figures', 'kmeans_cluster_arranged_figure.png'), height = 10, width = 16)
+```
+
+
+# REMEF Boxplots, ANOVAs
+```{r}
+interspec.df <- read.csv(here('data', 'processed-data', 'interspecific_flam_remef.csv')) %>% 
+    unite('species_id', c(species, plant), remove = F)
+```
+
+## Flame Height
+```{r}
+fh.spp <- lmer(r_fh ~ species + (1|species_id), data = interspec.df)
+anova(fh.spp) # p < 0.00001
+fh.spp.tukey <- emmeans(fh.spp, pairwise ~ species, adjust = 'tukey')
+fh.spp.tukey.df <- summary(fh.spp.tukey$contrasts)
+fh.spp.tukey.labels <- data.frame(species = c('CEAGRI', 'SALLEU', 'ARTCAL', 'SALAPI', 'ARCDEN', 'HETARB', 'MALLAU', 'ERIKAR'), letters = c('a', 'ab', 'ab', 'ab', 'ab', 'abc', 'bc', 'c'), adj = c(0, 0, 0, 0, 0, 0, 0, 0)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+fh.boxplot <- interspec.df %>%
+  mutate(species = fct_relevel(species, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU','ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = r_fh, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = r_fh, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 1.3 + adj, label = letters), fontface = 'bold',
+              data = fh.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Flame Height (cm)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+fh.boxplot
+```
+
+## Flame Duration
+```{r}
+fd.spp <- lmer(r_fd ~ species + (1|species_id), data = interspec.df)
+anova(fd.spp) # p < 0.00001
+fd.spp.tukey <- emmeans(fd.spp, pairwise ~ species, adjust = 'tukey')
+fd.spp.tukey.df <- summary(fd.spp.tukey$contrasts)
+fd.spp.tukey.labels <- data.frame(species = c('CEAGRI', 'SALLEU', 'ARTCAL', 'SALAPI', 'ARCDEN', 'HETARB', 'MALLAU', 'ERIKAR'), letters = c('a', 'ab', 'abc', 'c', 'abc', 'abc', 'abc', 'bc'), adj = c(0, 0, 0, 0, 0, 0, 0, 0)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+fd.boxplot <- interspec.df %>%
+  filter(fd < 70) %>% 
+  mutate(species = fct_relevel(species, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU','ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = r_fd, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = r_fd, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 4.25 + adj, label = letters), fontface = 'bold',
+              data = fd.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Flame Duration (sec)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+fd.boxplot
+```
+
+## Temp. Change
+```{r}
+tc.spp <- lmer(r_temp_change ~ species + (1|species_id), data = interspec.df)
+anova(tc.spp) # p < 0.00001
+tc.spp.tukey <- emmeans(tc.spp, pairwise ~ species, adjust = 'tukey')
+tc.spp.tukey.df <- summary(tc.spp.tukey$contrasts)
+tc.spp.tukey.labels <- data.frame(species = c('CEAGRI', 'SALLEU', 'ARTCAL', 'SALAPI', 'ARCDEN', 'HETARB', 'MALLAU', 'ERIKAR'), letters = c('a', 'a', 'a', 'a', 'a', 'a', 'a', 'a'),
+                                  adj = c(0, 0, 0, 0, 0, 0, 0, 0)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+tc.boxplot <- interspec.df %>%
+  mutate(species = fct_relevel(species, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU','ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  filter(temp_change < 100) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = r_temp_change, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = r_temp_change, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 1.5 + adj, label = letters), fontface = 'bold',
+              data = tc.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Temp. Change (°C)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+tc.boxplot
+```
+
+## Heat Flux Change
+```{r}
+hf.spp <- lmer(r_heat_flux_change ~ species + (1|species_id), data = interspec.df)
+anova(hf.spp) # p < 0.00001
+hf.spp.tukey <- emmeans(hf.spp, pairwise ~ species, adjust = 'tukey')
+hf.spp.tukey.df <- summary(hf.spp.tukey$contrasts)
+hf.spp.tukey.labels <- data.frame(species = c('CEAGRI', 'SALLEU', 'ARTCAL', 'SALAPI', 'ARCDEN', 'HETARB', 'MALLAU', 'ERIKAR'), letters = c('a', 'ab', 'ab', 'a', 'ab', 'ab', 'b', 'ab'), adj = c(0, 0, 0, 0, 0, 0, 0, 0)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+hf.boxplot <- interspec.df %>%
+  filter(heat_flux_change < 0.3) %>% 
+  mutate(species = fct_relevel(species, levels = c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU','ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = r_heat_flux_change, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = r_heat_flux_change, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = 0.9 + adj, label = letters), fontface = 'bold',
+              data = hf.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Heat Flux Change') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+hf.boxplot
+```
+
+## Arranged
+```{r}
+ggarrange(fh.boxplot, fd.boxplot, hf.boxplot, tc.boxplot,
+          labels = c('A', 'B', 'C', 'D'),
+          font.label = list(size = 28), ncol = 2, nrow = 2)
+ggsave(here('figures', 'main_figures', 'remef.spp.boxplots.png'), height = 9.5, width = 9)
+```
+
+# Clean Main Figure: Boxplots
+## Data Wrangling
+Tukey-Kramer Results
+```{r}
+fh.spp.tukey.labels <- fh.spp.tukey.labels %>% 
+  mutate(variable = 'fh') %>% 
+  mutate(y.pos = adj + 65)
+fd.spp.tukey.labels <- fd.spp.tukey.labels %>% 
+  mutate(variable = 'fd') %>% 
+  mutate(y.pos = adj + 59.5)
+tc.spp.tukey.labels <- tc.spp.tukey.labels %>% 
+  mutate(variable = 'temp_change') %>% 
+  mutate(y.pos = adj + 38)
+hf.spp.tukey.labels <- hf.spp.tukey.labels %>% 
+  mutate(variable = 'heat_flux_change') %>% 
+  mutate(y.pos = adj + 6000)
+sw.spp.tukey.labels <- sw.spp.tukey.labels %>% 
+  mutate(variable = 'sample_wt') %>% 
+  mutate(y.pos = adj + 24.6)
+branching.spp.tukey.labels <- branching.spp.tukey.labels %>% 
+  mutate(variable = 'branching') %>% 
+  mutate(y.pos = adj + 0.65)
+no.tukey.labels.df <- data.frame(species = c(rep(c("HETARB", "CEAGRI", "SALAPI", "MALLAU", "SALLEU", "ARCDEN", "ARTCAL", "ERIKAR"), 3)),
+                                 letters = c(rep('', 24)),
+                                 adj = c(rep(0, 24)),
+                                 y.pos = c(rep(0, 24)),
+                                 variable = c(rep('lfm', 8), rep('dmc', 8),
+                                              rep('leaf_mass_ratio', 8)))
+tukey.labels.df <- rbind(fh.spp.tukey.labels, fd.spp.tukey.labels, tc.spp.tukey.labels, hf.spp.tukey.labels, sw.spp.tukey.labels, branching.spp.tukey.labels, no.tukey.labels.df)
+```
+
+## Visualization
+```{r}
+variable_names <- c(fh = 'Flame Height (cm)',
+                    fd = 'Flame Duration (sec)',
+                    temp_change = 'Temp. Change (°C)',
+                    heat_flux_change = 'Heat Flux Change (W/m2)',
+                    sample_wt = 'Sample Mass (g)',
+                    branching  = 'Branching (branches/cm)',
+                    lfm  = 'Live Fuel Moisture (%)',
+                    dmc  = 'Dry Matter Content (%)',
+                    leaf_mass_ratio = 'Leaf Mass Ratio (%)')
+
+flamm.df %>% 
+  filter(fd < 70, temp_change < 100, branching < 0.75, leaf_mass_ratio > 0.4) %>% 
+  pivot_longer(cols = c(fh, fd, temp_change, heat_flux_change, sample_wt,
+                        branching, lfm, dmc, leaf_mass_ratio),
+               names_to = 'variable',
+               values_to = 'value') %>% 
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU', 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = value, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = value, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = y.pos, label = letters), fontface = 'bold',
+              data = tukey.labels.df, size = 6) +
+    facet_wrap(~factor(variable, c('fh', 'fd', 'heat_flux_change', 'temp_change', 'sample_wt',
+                        'branching', 'lfm', 'dmc', 'leaf_mass_ratio')),
+               scales = 'free_y',
+               strip.position = 'left',
+               labeller = as_labeller(variable_names)) +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15),
+          strip.background = element_blank(),
+          strip.placement = 'outside',
+          strip.text = element_text(size = 17, face = 'bold'))
+  
+#ggsave(here('figures', 'main_figures', 'clean.spp.boxplots.png'), height = 12, width = 13.5) # height was 9 w/ two rows
+```

@@ -1,0 +1,1409 @@
+---
+title: "Principal Component Analysis"
+author: "Joe Celebrezze"
+date: "2023-07-05"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# packages
+library(here)
+library(kableExtra)
+#remotes::install_github("vqv/ggbiplot")
+#install.packages("ggbiplot")
+library(ggbiplot) 
+library(tidyverse)
+library(sjPlot)
+library(ggpubr)
+library(cowplot)
+library(remef)
+library(lme4)
+library(psych) # for pairs.panels
+library(ggsci)
+
+# defining functions
+here = here::here
+rename = dplyr::rename
+select = dplyr::select
+ggbiplot = ggbiplot::ggbiplot
+
+# reading in data
+flamm.df <- read.csv(here('data', 'processed-data', 'main_dataset.csv'))
+```
+
+# Data Wrangling 
+```{r}
+flamm.df <- flamm.df %>% 
+  filter(species %in% c('ARTCAL', 'CEAGRI', 'ERIKAR', 'MALLAU', 'SALAPI', 'SALLEU', 'ARCDEN', 'HETARB')) %>% 
+  filter(ignition != '0') %>% 
+  filter(temp_change < 100) %>%  # removing outlier, as it makes things funky
+  unite('id', c(species, plant, rep), sep = '_', remove = F)
+```
+
+
+# 1. Flammability Metrics
+## 1.1. PCA Figure
+Plot setup:
+```{r warning=FALSE}
+flamm.df_pca <- flamm.df %>% 
+  filter(ignition != 0) %>% # No non-ignitions
+   select(fh, fd, temp_change, heat_flux_change, species, id) %>% 
+   drop_na(fh, fd, temp_change, heat_flux_change, species)
+
+figure_pca_quant <- (flamm.df_pca[, c("fh", "fd", "temp_change", "heat_flux_change", "species")]) %>%  
+ transmute("Flame Duration" = fd, #using spaces to shift labels over instead of \t since \t is leading to little blank squares popping up on the plot
+           "Flame Height" = fh,
+           "Temp Change" = temp_change,
+           "Heat Flux Change" = heat_flux_change
+          ) %>% 
+  na.omit()
+
+figure_pca_cat <- (flamm.df_pca[, c("fh", "fd", "temp_change", "heat_flux_change", "species")]) %>%  
+  na.omit() %>% 
+  select(species) %>% 
+  transmute("Species" = species)
+  
+figure_prcomp <- prcomp(na.omit(figure_pca_quant), 
+                          center = TRUE, 
+                          scale = TRUE, 
+                          retx=TRUE)
+  
+figure_pca <- (flamm.df_pca[, c("fh", "fd", "temp_change", "heat_flux_change", "species")]) %>%  
+  na.omit() 
+```
+
+```{r warning=FALSE}
+#Setting up plotting data: 
+
+#decisions for plotting:
+choices = 1:2 
+scale = 1
+obs.scale = 1 - scale
+var.scale = scale
+ellipse.prob = 0.68
+labels.size = 3
+circle.prob = 0.69
+choices = 1:2
+
+#Run PCA
+pcobj <- prcomp(na.omit(figure_pca_quant), center = TRUE, scale = TRUE)
+
+# extract PCA components: 
+nobs.factor <- sqrt(nrow(pcobj$x) - 1)
+    d <- pcobj$sdev
+    u <- sweep(pcobj$x, 2, 1/(d * nobs.factor), FUN = "*")
+    v <- pcobj$rotation
+
+  choices <- pmin(choices, ncol(u))
+  df.u <- as.data.frame(sweep(u[, choices], 2, d[choices]^obs.scale, 
+                              FUN = "*"))
+  v <- sweep(v, 2, d^var.scale, FUN = "*")
+  df.v <- as.data.frame(v[, choices])
+  names(df.u) <- c("PC1", "PC2")
+  names(df.v) <- names(df.u)
+  df.u <- df.u * nobs.factor
+
+  r <- sqrt(qchisq(circle.prob, df = 2)) * prod(colMeans(df.u^2))^(1/4)
+  
+v.scale <- rowSums(v^2)
+df.v <- r * df.v/sqrt(max(v.scale)) 
+df.v <- df.v %>% mutate(PC1, PC2)
+df.v$Variables <- rownames(v) 
+PCAloadings = df.v
+#df.v = dataset with loadings 
+
+#dataset with scores and categorical variables for plotting points: 
+PCAvalues <- cbind(df.u, figure_pca_cat)
+
+#dataset with information for plotting circle: 
+theta <- c(seq(-pi, pi, length = 50), seq(pi, -pi, length = 50))
+
+circle <- data.frame(PC1 = r * cos(theta), PC2 = r * sin(theta)) 
+
+#Group by flam. metric: 
+PCA_metrics <- df.v %>% 
+  filter(Variables %in% c("Flame Duration", "Flame Height", "Temp Change",
+                          "Heat Flux Change"))
+    
+# Calculate the angles and the label offset
+df.v$Angle = ((180/pi) * atan(df.v$PC2/df.v$PC1))
+
+df.v$Offset <- ((-2 * sign(df.v$PC1))/2)
+
+#labels: 
+u.axis.labs <- paste("PC", choices, sep = "")
+u.axis.labs <- paste(u.axis.labs, sprintf("(%0.1f%% explained var.)", 
+                                            100 * pcobj$sdev[choices]^2/sum(pcobj$sdev^2)))
+```
+
+Plot:
+```{r}
+flam.pca <- ggplot(data = PCAvalues, aes(x = PC1, y = PC2)) +
+  ylim(-3.5, 3.5) +
+  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues) +
+  stat_ellipse(aes(color = Species)) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  geom_segment(data = PCA_metrics, aes(x = 0, y = 0, 
+                                              xend = PC1, yend = PC2),
+     arrow = arrow(length = unit(1/2, "picas")), 
+    linewidth = .9, alpha = 0.9,
+     color = "black") +
+  annotate("text", 
+          x = (PCA_metrics$PC1 * 1.9), 
+          y = (PCA_metrics$PC2 * 1.2),
+          label = PCA_metrics$Variables, size = 6,
+          fontface = 'bold') +
+  theme(panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+          panel.grid.major = element_blank(),  # Hide major gridlines
+          panel.grid.minor = element_blank(),
+          legend.key = element_rect(fill = "white"),
+          legend.position = 'none', # change to 'right' if you want figure alone, change to 'none' if you want to arrange figures
+          legend.title = element_text(face = 'bold', size = 15),
+          legend.text = element_text(face = 'italic', size = 13),
+          axis.title = element_text(face = 'bold', size = 20),
+          axis.text = element_text(size = 18),
+          plot.margin = unit(c(.15, .15, .225, .3), "cm")) +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2", "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  geom_path(data = circle, color = "black",  size = 1/2, alpha = 1/3) + 
+  xlab(u.axis.labs[1]) + 
+   ylab(u.axis.labs[2]) #+
+  #coord_equal() #remove hash if you want to make coordinates equal; for arranging figure, looks best if they're not
+flam.pca
+#ggsave(here('figures', 'PCA', 'Flamm.PCA.png'), height = 7, width = 9)
+```
+
+## 1.2. PCA Table
+
+```{r warning=FALSE}
+figure_varimax <- varimax(pcobj$rotation[,1:3])
+figure_varimax
+
+tab_pca(pcobj, rotation = 'varimax',
+        nmbr.fctr = 4,
+        digits = 2,
+        show.var = TRUE,
+  string.pov = "Proportion of Variance",
+  string.cpov = "Cumulative Proportion",
+  file = here('figures', 'PCA', 'Flamm.PC.Table.html'))
+```
+
+## Adding PC Scores to Data
+```{r warning=FALSE}
+x_flam <-predict(pcobj)  ### generate scores for each row in flamm.df
+
+pca_flamm_data <- as_data_frame(x_flam) 
+
+pca_df <- cbind(pca_flamm_data, flamm.df_pca)
+```
+
+# 2. Plant Traits
+## 2.1. PCA Figure
+Plot setup:
+```{r warning=FALSE}
+traits.df_pca <- flamm.df %>% 
+  filter(ignition != 0) %>% # No non-ignitions
+   select(id, species, lfm, mpa, sample_density, LMA, thickness, branching, leaf_mass_ratio, sample_wt, leaf_sav, dmc, stem_sav) %>% 
+   drop_na(species, lfm, mpa, sample_density, LMA, thickness, branching, leaf_mass_ratio, sample_wt, leaf_sav, dmc, stem_sav) %>% 
+  select(id, species, lfm, mpa, LMA, thickness, branching, leaf_mass_ratio, leaf_sav, dmc, stem_sav)
+
+figure_pca_quant2 <- (traits.df_pca[, c('lfm', 'mpa', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'leaf_sav', 'dmc', 'stem_sav')]) %>%  
+ transmute("LFM" = lfm,  # added spaces to adjust label position
+           "Water Potential" = mpa,
+           "LMA" = LMA,
+           "Thickness" = thickness,
+           "Branching" = branching,
+           "Leaf Ratio\n" = leaf_mass_ratio,
+           #"Sample Weight" = sample_wt,
+           "\nDry Matter Content" = dmc, # added spaces to adjust label position
+           "Leaf SA:V" = leaf_sav,
+           "Stem SA:V" = stem_sav) %>% 
+  na.omit()
+
+figure_pca_cat2 <- (traits.df_pca[, c('species', 'lfm', 'mpa', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'leaf_sav', 'dmc', 'stem_sav')]) %>% 
+  na.omit() %>% 
+  select(species) %>% 
+  transmute("Species" = species)
+  
+figure_prcomp2 <- prcomp(na.omit(figure_pca_quant2), 
+                          center = TRUE, 
+                          scale = TRUE, 
+                          retx=TRUE)
+  
+figure_pca2 <- (traits.df_pca[, c('species', 'lfm', 'mpa', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'leaf_sav', 'dmc', 'stem_sav')]) %>%  
+  na.omit() 
+```
+
+```{r warning=FALSE}
+#Setting up plotting data: 
+
+#decisions for plotting:
+choices = 1:2 
+scale = 1
+obs.scale = 1 - scale
+var.scale = scale
+ellipse.prob = 0.68
+labels.size = 3
+circle.prob = 0.69
+choices = 1:2
+
+#Run PCA
+pcobj2 <- prcomp(na.omit(figure_pca_quant2), center = TRUE, scale = TRUE)
+
+# extract PCA components: 
+nobs.factor <- sqrt(nrow(pcobj2$x) - 1)
+    d <- pcobj2$sdev
+    u <- sweep(pcobj2$x, 2, 1/(d * nobs.factor), FUN = "*")
+    v <- pcobj2$rotation
+
+  choices <- pmin(choices, ncol(u))
+  df.u <- as.data.frame(sweep(u[, choices], 2, d[choices]^obs.scale, 
+                              FUN = "*"))
+  v <- sweep(v, 2, d^var.scale, FUN = "*")
+  df.v <- as.data.frame(v[, choices])
+  names(df.u) <- c("PC1", "PC2")
+  names(df.v) <- names(df.u)
+  df.u <- df.u * nobs.factor
+
+  r <- sqrt(qchisq(circle.prob, df = 2)) * prod(colMeans(df.u^2))^(1/4)
+  
+v.scale <- rowSums(v^2)
+df.v <- r * df.v/sqrt(max(v.scale)) 
+df.v <- df.v %>% mutate(PC1, PC2)
+df.v$Variables <- rownames(v) 
+PCAloadings = df.v
+#df.v = dataset with loadings 
+
+#dataset with scores and categorical variables for plotting points: 
+PCAvalues2 <- cbind(df.u, figure_pca_cat2)
+
+#dataset with information for plotting circle: 
+theta <- c(seq(-pi, pi, length = 50), seq(pi, -pi, length = 50))
+
+circle <- data.frame(PC1 = r * cos(theta), PC2 = r * sin(theta)) 
+
+#Group by flam. metric: 
+PCA_metrics2 <- df.v %>% 
+  filter(Variables %in% c("LFM", "Water Potential", "Sample Density", "LMA",
+           "Thickness", "Branching", "Leaf Ratio\n", "\nDry Matter Content",
+           "Leaf SA:V", "Stem SA:V"))
+    
+# Calculate the angles and the label offset
+df.v$Angle = ((180/pi) * atan(df.v$PC2/df.v$PC1))
+
+df.v$Offset <- ((-2 * sign(df.v$PC1))/2)
+
+#labels: 
+u.axis.labs <- paste("PC", choices, sep = "")
+u.axis.labs <- paste(u.axis.labs, sprintf("(%0.1f%% explained var.)", 
+                                            100 * pcobj2$sdev[choices]^2/sum(pcobj2$sdev^2)))
+```
+
+Plot:
+```{r}
+traits.pca <- ggplot(PCAvalues2, aes(x = PC1, y = PC2)) +
+  ylim(-3.8, 2.4) +
+  xlim(-2.1, 2.4) +
+  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues2) +
+  stat_ellipse(aes(color = Species)) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  geom_segment(data = PCA_metrics2, aes(x = 0, y = 0, 
+                                              xend = PC1, yend = PC2),
+     arrow = arrow(length = unit(1/2, "picas")), 
+    linewidth = .9, alpha = 0.9,
+     color = "black") +
+  annotate("text", 
+          x = (PCA_metrics2$PC1 * 1.3), 
+          y = (PCA_metrics2$PC2 * 1.2),
+          label = PCA_metrics2$Variables, size = 6,
+          fontface = 'bold') +
+  theme(panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+          panel.grid.major = element_blank(),  # Hide major gridlines
+          panel.grid.minor = element_blank(),
+          legend.key = element_rect(fill = "white"),
+          legend.position = 'none', # change to 'right' if you want figure alone, change to 'none' if you want to arrange figures
+          legend.title = element_text(face = 'bold', size = 15),
+          legend.text = element_text(face = 'italic', size = 13),
+          axis.title = element_text(face = 'bold', size = 20),
+          axis.text = element_text(size = 18),
+          plot.margin = unit(c(.25, .15, .15, .2), "cm")) + 
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2", "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+  xlab(u.axis.labs[1]) + 
+  ylab(u.axis.labs[2])# +
+  #coord_equal() #remove hash if you want to make coordinates equal; for arranging figure, looks best if they're not
+traits.pca
+#ggsave(here('figures', 'PCA', 'Traits.PCA.png'), height = 7, width = 9)
+?theme
+```
+
+## 2.2. PCA Table
+```{r warning=FALSE}
+figure_varimax <- varimax(pcobj2$rotation[,1:3])
+figure_varimax
+
+summary(pcobj2)
+
+tab_pca(pcobj2, rotation = 'varimax',
+        nmbr.fctr = 4,
+        digits = 2,
+        show.var = TRUE,
+  string.pov = "Proportion of Variance",
+  string.cpov = "Cumulative Proportion",
+  file = here('figures', 'PCA', 'Traits.PC.Table.html'))
+```
+
+## Adding PC Scores to Data
+```{r warning=FALSE}
+x_traits <-predict(pcobj2)  ### generate scores for each row in flamm.df
+
+pca_traits_data <- as_data_frame(x_traits) 
+
+pca_df2 <- cbind(pca_traits_data, traits.df_pca)
+```
+
+# 3. Comparing Principal Components
+```{r}
+pca_df <- pca_df %>% 
+  #select(-PC4) %>%  # Not interested in PC4 or PC5 (>80% of variance explained by first three PCs)
+  rename(PC1_flamm = PC1,
+         PC2_flamm = PC2,
+         PC3_flamm = PC3,
+         PC4_flamm = PC4)
+
+pca_df2 <- pca_df2 %>% 
+  select(-PC5, -PC6, -PC7, -PC8, -PC9, -species) %>%  # Not interested in PC5 through PC10 (>80% of variance explained by first four PCs); species variable already in pca_df
+  rename(PC1_traits = PC1,
+         PC2_traits = PC2,
+         PC3_traits = PC3,
+         PC4_traits = PC4)
+
+pca_df_main <- merge(pca_df, pca_df2, by = 'id')
+```
+
+## Scatterplots
+### Stand-alone
+```{r}
+pc_labels <- c('PC1 (-FH)', 'PC2 (-\U0394Temp)', 'PC3 (FD)', 'PC4 (-\U0394Heat Flux)', 'PC1 (DMC, -Density, -LMR)', 'PC2 (Leaf SA:V, -Thickness)', 'PC3 (LMA, Sample Weight)', 'PC4 (-LFM, MPa, Branching)')
+names(pc_labels) <- c('PC1_flamm', 'PC2_flamm', 'PC3_flamm', 'PC4_flamm', 'PC1_traits', 'PC2_traits', 'PC3_traits', 'PC4_traits')
+
+pca_df_main %>% 
+  pivot_longer(cols = c(PC1_flamm, PC2_flamm, PC3_flamm, PC4_flamm), values_to = 'flamm_pc_score', names_to = 'flamm_pc') %>% 
+  pivot_longer(cols = c(PC1_traits, PC2_traits, PC3_traits, PC4_traits), values_to = 'traits_pc_score', names_to = 'traits_pc') %>% 
+  ggplot(aes(x = traits_pc_score, y = flamm_pc_score)) +
+    geom_point(alpha = 0.5, aes(color = species)) +
+    geom_smooth(method = 'lm', color = 'black', alpha = 0.75) +
+    stat_cor(label.y.npc = 'bottom', label.x.npc = 'left', size = 2.5)+ 
+    #stat_regline_equation(label.y.npc = 'bottom', label.x.npc = 'left', size = 3) +
+    facet_grid(flamm_pc ~ traits_pc, scales = 'free', labeller = labeller(flamm_pc = pc_labels, traits_pc = pc_labels)) +
+    labs(y = 'Flamm. PC Score', x = 'Traits PC Score', color = 'Species') +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2", "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+    theme_bw() +
+    theme(legend.position = 'right',
+          legend.title = element_text(size = 16, face = 'bold'),
+          axis.title = element_text(size = 16, face = 'bold'),
+          axis.text = element_text(size = 13),
+          strip.text = element_text(size = 11.5, face = 'bold'))
+ggsave(here('figures', 'PCA', 'PC.Regressions.png'), height = 8, width = 12)
+```
+
+### For Arranged Main Figure
+3x3 panels
+```{r}
+pc_labels <- c('PC1 (-FH)', 'PC2 (-\U0394Temp)', 'PC3 (FD)', 'PC1 (-LFM, -LMR, DMC)', 'PC2 (-MPa, -Branching)', 'PC3 (-LTh, Leaf SA:V)')
+names(pc_labels) <- c('PC1_flamm', 'PC2_flamm', 'PC3_flamm', 'PC1_traits', 'PC2_traits', 'PC3_traits')
+
+pc.scatterplot <- pca_df_main %>% 
+  pivot_longer(cols = c(PC1_flamm, PC2_flamm, PC3_flamm), values_to = 'flamm_pc_score', names_to = 'flamm_pc') %>% 
+  pivot_longer(cols = c(PC1_traits, PC2_traits, PC3_traits), values_to = 'traits_pc_score', names_to = 'traits_pc') %>% 
+  ggplot(aes(x = traits_pc_score, y = flamm_pc_score)) +
+    geom_point(alpha = 0.5, aes(color = species)) +
+    geom_smooth(method = 'lm', color = 'black', alpha = 0.75) +
+    stat_cor(label.y.npc = 'bottom', label.x.npc = 'left', size = 5, fontface = 'bold')+ 
+    #stat_regline_equation(label.y.npc = 'bottom', label.x.npc = 'left', size = 3) +
+    facet_grid(flamm_pc ~ traits_pc, scales = 'free', labeller = labeller(flamm_pc = pc_labels, traits_pc = pc_labels)) +
+    labs(y = 'Flamm. PC Score', x = 'Traits PC Score') +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2", "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(size = 18, face = 'bold'),
+          axis.text = element_text(size = 14),
+          strip.text = element_text(size = 14, face = 'bold'))
+pc.scatterplot
+```
+
+PC1 vs PC1
+```{r}
+pc1.scatterplot <- pca_df_main %>% 
+  ggplot(aes(x = PC1_traits, y = PC1_flamm)) +
+    geom_point(alpha = 0.5, aes(color = species)) +
+    geom_smooth(method = 'lm', color = 'black', alpha = 0.75, fill = 'gray75') +
+    stat_cor(label.y.npc = 'bottom', label.x.npc = 'left', size = 6, fontface = 'bold')+ 
+    #stat_regline_equation(label.y.npc = 'bottom', label.x.npc = 'left', size = 3) +
+    labs(y = 'Flammability PC1', x = 'Traits PC1') +
+    scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2",
+                                  "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+    scale_y_continuous(breaks = c(-4, -2, 0, 2)) +
+    scale_x_continuous(breaks = c(-2, 0, 2, 4)) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(size = 20, face = 'bold'),
+          axis.text = element_text(size = 18))
+pc1.scatterplot
+```
+
+## Second-order PCA
+```{r}
+# selecting metrics of interest
+second_order_pca_df <- pca_df_main %>% 
+  select(species, PC1_flamm, PC2_flamm, PC3_flamm, PC1_traits, PC2_traits, PC3_traits, PC4_traits) # selecting principal components from above
+
+# looking at correlation and distribution
+pairs.panels(second_order_pca_df)
+
+# prepping dataset for PCA
+second_order_pca_df <- second_order_pca_df %>% 
+  na.omit()
+
+# running PCA
+second_order_pcobj <- second_order_pca_df %>% 
+  select(-species) %>% 
+  prcomp(center = TRUE, scale = TRUE) 
+
+# first glance at results
+summary(second_order_pcobj)
+plot(second_order_pcobj, type = 'lines') # first 2 explain 51.86% variance
+print(second_order_pcobj) # PC1: flame height, flame duration, max temp and max heat flux (combustibility), PC2: time to ignition, proportion ignited, post-flame glow (ignitability and consumability)
+
+# visualizing results
+ggbiplot(second_order_pcobj,
+         groups = second_order_pca_df$species,
+         ellipse = TRUE, varname.size = 5, alpha = 0.5) +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2", "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+    theme_bw()
+
+# eigenvalue table
+tab_pca(second_order_pcobj, rotation = 'varimax',
+        nmbr.fctr = 5,
+        digits = 2,
+        show.var = TRUE,
+  string.pov = "Proportion of Variance",
+  string.cpov = "Cumulative Proportion") 
+```
+
+# 4. Flam. and Plant Traits PCA
+Using key variables identified in above PCAs and in MEM selection 
+
+## 4.1. PCA Figure
+Plot setup:
+```{r warning=FALSE}
+flamm.df_pca <- flamm.df %>% 
+  filter(ignition != 0) %>% # No non-ignitions
+   select(fh, fd, temp_change, heat_flux_change, lfm, mpa, sample_wt, sample_density, LMA, branching, species, id) %>% 
+   drop_na(fh, fd, temp_change, heat_flux_change, lfm, mpa, sample_wt, sample_density, LMA, branching, species)
+
+figure_pca_quant <- (flamm.df_pca[, c("fh", "fd", "temp_change", "heat_flux_change", "species",'lfm', 'mpa', 'sample_wt', 'sample_density', 'LMA', 'branching')]) %>%  
+ transmute("Flame Duration" = fd, #using spaces to shift labels over instead of \t since \t is leading to little blank squares popping up on the plot
+           "Flame Height" = fh,
+           "Temp Change" = temp_change,
+           "Heat Flux Change" = heat_flux_change,
+           "Live Fuel Moisture" = lfm, #using spaces to shift labels over instead of \t since \t is leading to little blank squares popping up on the plot
+           "Water Potential" = mpa,
+           "Sample Weight (g)" = sample_wt,
+           "Sample Density (g/cm3)" = sample_density,
+           "Leaf Mass per Area" = LMA,
+           "Branching" = branching,
+          ) %>% 
+  na.omit()
+
+figure_pca_cat <- (flamm.df_pca[, c("fh", "fd", "temp_change", "heat_flux_change", "species",'lfm', 'mpa', 'sample_wt', 'sample_density', 'LMA', 'branching')]) %>%  
+  na.omit() %>% 
+  select(species) %>% 
+  transmute("Species" = species)
+  
+figure_prcomp <- prcomp(na.omit(figure_pca_quant), 
+                          center = TRUE, 
+                          scale = TRUE, 
+                          retx=TRUE)
+  
+figure_pca <- (flamm.df_pca[, c("fh", "fd", "temp_change", "heat_flux_change", "species",'lfm', 'mpa', 'sample_wt', 'sample_density', 'LMA', 'branching')]) %>%  
+  na.omit() 
+```
+
+```{r warning=FALSE}
+#Setting up plotting data: 
+
+#decisions for plotting:
+choices = 1:2 
+scale = 1
+obs.scale = 1 - scale
+var.scale = scale
+ellipse.prob = 0.68
+labels.size = 3
+circle.prob = 0.69
+choices = 1:2
+
+#Run PCA
+pcobj <- prcomp(na.omit(figure_pca_quant), center = TRUE, scale = TRUE)
+
+# extract PCA components: 
+nobs.factor <- sqrt(nrow(pcobj$x) - 1)
+    d <- pcobj$sdev
+    u <- sweep(pcobj$x, 2, 1/(d * nobs.factor), FUN = "*")
+    v <- pcobj$rotation
+
+  choices <- pmin(choices, ncol(u))
+  df.u <- as.data.frame(sweep(u[, choices], 2, d[choices]^obs.scale, 
+                              FUN = "*"))
+  v <- sweep(v, 2, d^var.scale, FUN = "*")
+  df.v <- as.data.frame(v[, choices])
+  names(df.u) <- c("PC1", "PC2")
+  names(df.v) <- names(df.u)
+  df.u <- df.u * nobs.factor
+
+  r <- sqrt(qchisq(circle.prob, df = 2)) * prod(colMeans(df.u^2))^(1/4)
+  
+v.scale <- rowSums(v^2)
+df.v <- r * df.v/sqrt(max(v.scale)) 
+df.v <- df.v %>% mutate(PC1, PC2)
+df.v$Variables <- rownames(v) 
+PCAloadings = df.v
+#df.v = dataset with loadings 
+
+#dataset with scores and categorical variables for plotting points: 
+PCAvalues <- cbind(df.u, figure_pca_cat)
+
+#dataset with information for plotting circle: 
+theta <- c(seq(-pi, pi, length = 50), seq(pi, -pi, length = 50))
+
+circle <- data.frame(PC1 = r * cos(theta), PC2 = r * sin(theta)) 
+
+#Group by flam. metric: 
+PCA_metrics <- df.v %>% 
+  filter(Variables %in% c("Flame Duration", "Flame Height", "Temp Change",
+                          "Heat Flux Change", "Live Fuel Moisture",
+                          "Water Potential", "Sample Weight (g)",
+                          "Sample Weight (g/cm3)",
+                          "Leaf Mass per Area", "Branching"))
+    
+# Calculate the angles and the label offset
+df.v$Angle = ((180/pi) * atan(df.v$PC2/df.v$PC1))
+
+df.v$Offset <- ((-2 * sign(df.v$PC1))/2)
+
+#labels: 
+u.axis.labs <- paste("PC", choices, sep = "")
+u.axis.labs <- paste(u.axis.labs, sprintf("(%0.1f%% explained var.)", 
+                                            100 * pcobj$sdev[choices]^2/sum(pcobj$sdev^2)))
+```
+
+Plot:
+```{r}
+ggplot(PCAvalues, aes(x = PC1, y = PC2)) +
+  ylim(-4, 3) +
+  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues) +
+  stat_ellipse(aes(color = Species)) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  geom_segment(data = PCA_metrics, aes(x = 0, y = 0, 
+                                              xend = PC1, yend = PC2),
+     arrow = arrow(length = unit(1/2, "picas")), 
+    linewidth = .9, alpha = 0.9,
+     color = "black") +
+  annotate("text", 
+          x = (PCA_metrics$PC1 * 1.3), 
+          y = (PCA_metrics$PC2 * 1.1),
+          label = PCA_metrics$Variables, size = 3.5,
+          fontface = 'bold') +
+  theme(panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+          panel.grid.major = element_blank(),  # Hide major gridlines
+          panel.grid.minor = element_blank(),
+          legend.key = element_rect(fill = "white"),
+          legend.position = 'right',
+          legend.title = element_text(face = 'bold', size = 15),
+          legend.text = element_text(face = 'italic', size = 13),
+          axis.title = element_text(face = 'bold', size = 15)) +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2", "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+   geom_path(data = circle, color = "black",  size = 1/2, alpha = 1/3) + 
+   xlab(u.axis.labs[1]) + 
+   ylab(u.axis.labs[2]) +
+  coord_equal()
+#ggsave(here('figures', 'PCA', 'FlammandTraits.PCA.png'), height = 7, width = 9)
+```
+
+## 4.2. PCA Table
+```{r warning=FALSE}
+figure_varimax <- varimax(pcobj2$rotation[,1:3])
+figure_varimax
+
+#tab_pca(pcobj, rotation = 'varimax',
+#        nmbr.fctr = 4,
+#         digits = 2,
+#         show.var = TRUE,
+#  string.pov = "Proportion of Variance",
+#  string.cpov = "Cumulative Proportion",
+#  file = here('figures', 'PCA', 'FlammandTraits.PC.Table.html')) 
+```
+
+# 5. Arranging Figures
+legend
+```{r}
+legend <- get_legend(ggplot(PCAvalues2, aes(x = PC1, y = PC2)) +
+  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues2) +
+  stat_ellipse(aes(color = Species)) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  theme(legend.key = element_rect(fill = "white"),
+        legend.position = 'bottom',
+        legend.title = element_text(face = 'bold', size = 18),
+        legend.text = element_text(face = 'italic', size = 16)) +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2", "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")))
+```
+
+```{r}
+# blank figure
+blank <- ggplot(data = flamm.df, aes(x = species, y = mpa)) +
+  theme_void()
+
+# arranging
+plots <- ggarrange(traits.pca, blank, pc.scatterplot, flam.pca,
+          labels = c('A', ' ', 'C', 'B'),
+          font.label = list(size = 34),
+          ncol = 2, nrow = 2,
+          heights = c(2, 2), widths = c(5, 4))
+ggarrange(plots, legend,
+          ncol = 1, heights = c(8, 1))
+ggsave(here('figures', 'main_figures', 'pca.and.scatterplots.png'), height = 14, width = 16)
+
+plots <- ggarrange(flam.pca, pc1.scatterplot, blank, traits.pca,
+          labels = c('a', 'c', '', 'b'),
+          font.label = list(size = 40),
+          ncol = 2, nrow = 2,
+          heights = c(2, 2), widths = c(5, 4))
+ggarrange(plots, legend,
+          ncol = 1, heights = c(8, 1))
+ggsave(here('figures', 'main_figures', 'pc1.vs.pc1.and.scatterplots.png'), height = 14, width = 16)
+```
+
+
+# ----------------------------
+
+# Split by ignition = 1 and ignition = M; no IRDOU
+## Data Wrangling
+```{r}
+flamm.split.df <- flamm.df %>% 
+  filter(species %in% c('CEAGRI', 'ERIKAR', 'MALLAU', 'SALAPI', 'SALLEU', 'HETARB', 'ARCDEN')) # No IRIDOU
+
+flamm.manual.df <- flamm.split.df %>% 
+  filter(ignition == 'M')
+
+flamm.natural.df <- flamm.split.df %>% 
+  filter(ignition == '1')
+```
+
+### -*-*-*-*-*-
+
+## Manual Ignitions (n = 107)
+### 1. Flammability Metrics
+#### 1.1. PCA Figure
+Plot setup:
+```{r warning=FALSE}
+flamm.manual.df_pca <- flamm.manual.df %>% 
+  filter(ignition != 0) %>% # No non-ignitions
+   select(fh, fd, pfg, temp_change, heat_flux_change, species, id) %>% 
+   drop_na(fh, fd, pfg, temp_change, heat_flux_change, species)
+
+figure_pca_quant <- (flamm.manual.df_pca[, c("fh", "fd", "pfg", "temp_change", "heat_flux_change", "species")]) %>%  
+ transmute("Flame Duration" = fd, #using spaces to shift labels over instead of \t since \t is leading to little blank squares popping up on the plot
+           "Flame Height" = fh,
+           "Post-flame Glow" = pfg,
+           "Temp Change" = temp_change,
+           "Heat Flux Change" = heat_flux_change
+          ) %>% 
+  na.omit()
+
+figure_pca_cat <- (flamm.manual.df_pca[, c("fh", "fd", "pfg", "temp_change", "heat_flux_change", "species")]) %>%  
+  na.omit() %>% 
+  select(species) %>% 
+  transmute("Species" = species)
+  
+figure_prcomp <- prcomp(na.omit(figure_pca_quant), 
+                          center = TRUE, 
+                          scale = TRUE, 
+                          retx=TRUE)
+  
+figure_pca <- (flamm.manual.df_pca[, c("fh", "fd", "pfg", "temp_change", "heat_flux_change", "species")]) %>%  
+  na.omit() 
+```
+
+```{r warning=FALSE}
+#Setting up plotting data: 
+
+#decisions for plotting:
+choices = 1:2 
+scale = 1
+obs.scale = 1 - scale
+var.scale = scale
+ellipse.prob = 0.68
+labels.size = 3
+circle.prob = 0.69
+choices = 1:2
+
+#Run PCA
+pcobj <- prcomp(na.omit(figure_pca_quant), center = TRUE, scale = TRUE)
+
+# extract PCA components: 
+nobs.factor <- sqrt(nrow(pcobj$x) - 1)
+    d <- pcobj$sdev
+    u <- sweep(pcobj$x, 2, 1/(d * nobs.factor), FUN = "*")
+    v <- pcobj$rotation
+
+  choices <- pmin(choices, ncol(u))
+  df.u <- as.data.frame(sweep(u[, choices], 2, d[choices]^obs.scale, 
+                              FUN = "*"))
+  v <- sweep(v, 2, d^var.scale, FUN = "*")
+  df.v <- as.data.frame(v[, choices])
+  names(df.u) <- c("PC1", "PC2")
+  names(df.v) <- names(df.u)
+  df.u <- df.u * nobs.factor
+
+  r <- sqrt(qchisq(circle.prob, df = 2)) * prod(colMeans(df.u^2))^(1/4)
+  
+v.scale <- rowSums(v^2)
+df.v <- r * df.v/sqrt(max(v.scale)) 
+df.v <- df.v %>% mutate(PC1, PC2)
+df.v$Variables <- rownames(v) 
+PCAloadings = df.v
+#df.v = dataset with loadings 
+
+#dataset with scores and categorical variables for plotting points: 
+PCAvalues <- cbind(df.u, figure_pca_cat)
+
+#dataset with information for plotting circle: 
+theta <- c(seq(-pi, pi, length = 50), seq(pi, -pi, length = 50))
+
+circle <- data.frame(PC1 = r * cos(theta), PC2 = r * sin(theta)) 
+
+#Group by flam. metric: 
+PCA_metrics <- df.v %>% 
+  filter(Variables %in% c("Flame Duration", "Flame Height", "Post-flame Glow", "Temp Change",
+                          "Heat Flux Change"))
+    
+# Calculate the angles and the label offset
+df.v$Angle = ((180/pi) * atan(df.v$PC2/df.v$PC1))
+
+df.v$Offset <- ((-2 * sign(df.v$PC1))/2)
+
+#labels: 
+u.axis.labs <- paste("PC", choices, sep = "")
+u.axis.labs <- paste(u.axis.labs, sprintf("(%0.1f%% explained var.)", 
+                                            100 * pcobj$sdev[choices]^2/sum(pcobj$sdev^2)))
+```
+
+Plot:
+```{r}
+ggplot(PCAvalues, aes(x = PC1, y = PC2)) +
+  ylim(-4, 3) +
+  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues) +
+  stat_ellipse(aes(color = Species)) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  geom_segment(data = PCA_metrics, aes(x = 0, y = 0, 
+                                              xend = PC1, yend = PC2),
+     arrow = arrow(length = unit(1/2, "picas")), 
+    linewidth = .9, alpha = 0.9,
+     color = "black") +
+  annotate("text", 
+          x = (PCA_metrics$PC1 * 1.3), 
+          y = (PCA_metrics$PC2 * 1.1),
+          label = PCA_metrics$Variables, size = 3.5,
+          fontface = 'bold') +
+  theme(panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+          panel.grid.major = element_blank(),  # Hide major gridlines
+          panel.grid.minor = element_blank(),
+          legend.key = element_rect(fill = "white"),
+          legend.position = 'right',
+          legend.title = element_text(face = 'bold', size = 15),
+          legend.text = element_text(face = 'italic', size = 13),
+          axis.title = element_text(face = 'bold', size = 15)) +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2", "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+    geom_path(data = circle, color = "black",  size = 1/2, alpha = 1/3) + 
+    xlab(u.axis.labs[1]) + 
+    ylab(u.axis.labs[2]) +
+    coord_equal()
+ggsave(here('figures', 'PCA', 'manual_ignitions', 'Flamm.PCA.png'), height = 7, width = 9)
+```
+
+#### 1.2. PCA Table
+
+```{r warning=FALSE}
+figure_varimax <- varimax(pcobj$rotation[,1:3])
+figure_varimax
+
+tab_pca(pcobj, rotation = 'varimax',
+        nmbr.fctr = 4,
+        digits = 2,
+        show.var = TRUE,
+  string.pov = "Proportion of Variance",
+  string.cpov = "Cumulative Proportion",
+  file = here('figures', 'PCA', 'manual_ignitions', 'Flamm.PC.Table.html')) 
+```
+
+#### Adding PC Scores to Data
+```{r warning=FALSE}
+x_flam <-predict(pcobj)  ### generate scores for each row in flamm.manual.df
+
+pca_flamm_data <- as_data_frame(x_flam) 
+
+pca_df <- cbind(pca_flamm_data, flamm.manual.df_pca)
+```
+
+### 2. Plant Traits
+#### 2.1. PCA Figure
+Plot setup:
+```{r warning=FALSE}
+traits.df_pca <- flamm.manual.df %>% 
+  filter(ignition != 0) %>% # No non-ignitions
+   select(id, species, lfm, mpa, sample_density, LMA, thickness, branching, leaf_mass_ratio, sample_wt, branch_volume) %>% 
+   drop_na(species, lfm, mpa, sample_density, LMA, thickness, branching, leaf_mass_ratio, sample_wt, branch_volume)
+
+figure_pca_quant2 <- (traits.df_pca[, c('species','lfm', 'mpa', 'sample_density', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'sample_wt', 'branch_volume')]) %>%  
+ transmute("Live Fuel Moisture" = lfm, #using spaces to shift labels over instead of \t since \t is leading to little blank squares popping up on the plot
+           "Water Potential" = mpa,
+           "Sample Density (g/cm3)" = sample_density,
+           "Leaf Mass per Area" = LMA,
+           "Thickness (mm)" = thickness,
+           "Branching" = branching,
+           "Leaf Ratio" = leaf_mass_ratio,
+           "Sample Weight (g)" = sample_wt,
+           "Branch Volume (cm3)" = branch_volume) %>% 
+  na.omit()
+
+figure_pca_cat2 <- (traits.df_pca[, c('species', 'lfm', 'mpa', 'sample_density', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'sample_wt', 'branch_volume')]) %>% 
+  na.omit() %>% 
+  select(species) %>% 
+  transmute("Species" = species)
+  
+figure_prcomp2 <- prcomp(na.omit(figure_pca_quant2), 
+                          center = TRUE, 
+                          scale = TRUE, 
+                          retx=TRUE)
+  
+figure_pca2 <- (traits.df_pca[, c('species', 'lfm', 'mpa', 'sample_density', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'sample_wt', 'branch_volume')]) %>%  
+  na.omit() 
+```
+
+```{r warning=FALSE}
+#Setting up plotting data: 
+
+#decisions for plotting:
+choices = 1:2 
+scale = 1
+obs.scale = 1 - scale
+var.scale = scale
+ellipse.prob = 0.68
+labels.size = 3
+circle.prob = 0.69
+choices = 1:2
+
+#Run PCA
+pcobj2 <- prcomp(na.omit(figure_pca_quant2), center = TRUE, scale = TRUE)
+
+# extract PCA components: 
+nobs.factor <- sqrt(nrow(pcobj2$x) - 1)
+    d <- pcobj2$sdev
+    u <- sweep(pcobj2$x, 2, 1/(d * nobs.factor), FUN = "*")
+    v <- pcobj2$rotation
+
+  choices <- pmin(choices, ncol(u))
+  df.u <- as.data.frame(sweep(u[, choices], 2, d[choices]^obs.scale, 
+                              FUN = "*"))
+  v <- sweep(v, 2, d^var.scale, FUN = "*")
+  df.v <- as.data.frame(v[, choices])
+  names(df.u) <- c("PC1", "PC2")
+  names(df.v) <- names(df.u)
+  df.u <- df.u * nobs.factor
+
+  r <- sqrt(qchisq(circle.prob, df = 2)) * prod(colMeans(df.u^2))^(1/4)
+  
+v.scale <- rowSums(v^2)
+df.v <- r * df.v/sqrt(max(v.scale)) 
+df.v <- df.v %>% mutate(PC1, PC2)
+df.v$Variables <- rownames(v) 
+PCAloadings = df.v
+#df.v = dataset with loadings 
+
+#dataset with scores and categorical variables for plotting points: 
+PCAvalues2 <- cbind(df.u, figure_pca_cat2)
+
+#dataset with information for plotting circle: 
+theta <- c(seq(-pi, pi, length = 50), seq(pi, -pi, length = 50))
+
+circle <- data.frame(PC1 = r * cos(theta), PC2 = r * sin(theta)) 
+
+#Group by flam. metric: 
+PCA_metrics2 <- df.v %>% 
+  filter(Variables %in% c("Live Fuel Moisture", "Water Potential", 
+                          "Sample Density (g/cm3)", "Leaf Mass per Area",
+                          "Thickness (mm)", "Branching",
+                          "Leaf Ratio", "Sample Weight (g)",
+                          "Branch Volume (cm3)"))
+    
+# Calculate the angles and the label offset
+df.v$Angle = ((180/pi) * atan(df.v$PC2/df.v$PC1))
+
+df.v$Offset <- ((-2 * sign(df.v$PC1))/2)
+
+#labels: 
+u.axis.labs <- paste("PC", choices, sep = "")
+u.axis.labs <- paste(u.axis.labs, sprintf("(%0.1f%% explained var.)", 
+                                            100 * pcobj$sdev[choices]^2/sum(pcobj$sdev^2)))
+```
+
+Plot:
+```{r}
+ggplot(PCAvalues2, aes(x = PC1, y = PC2)) +
+  ylim(-4, 3) +
+  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues2) +
+  stat_ellipse(aes(color = Species)) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  geom_segment(data = PCA_metrics2, aes(x = 0, y = 0, 
+                                              xend = PC1, yend = PC2),
+     arrow = arrow(length = unit(1/2, "picas")), 
+    linewidth = .9, alpha = 0.9,
+     color = "black") +
+  annotate("text", 
+          x = (PCA_metrics2$PC1 * 1.3), 
+          y = (PCA_metrics2$PC2 * 1.1),
+          label = PCA_metrics2$Variables, size = 3.5,
+          fontface = 'bold') +
+  theme(panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+          panel.grid.major = element_blank(),  # Hide major gridlines
+          panel.grid.minor = element_blank(),
+          legend.key = element_rect(fill = "white"),
+          legend.position = 'right',
+          legend.title = element_text(face = 'bold', size = 15),
+          legend.text = element_text(face = 'italic', size = 13),
+          axis.title = element_text(face = 'bold', size = 15)) +
+  scale_color_manual(values = c("#00468BB2", "#ED0000B2", "#42B540B2", "#0099B4B2", "#925E9FB2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+    geom_path(data = circle, color = "black",  size = 1/2, alpha = 1/3) + 
+    xlab(u.axis.labs[1]) + 
+    ylab(u.axis.labs[2]) +
+    coord_equal()
+ggsave(here('figures', 'PCA', 'manual_ignitions', 'Traits.PCA.png'), height = 7, width = 9)
+```
+
+#### 2.2. PCA Table
+```{r warning=FALSE}
+figure_varimax <- varimax(pcobj2$rotation[,1:3])
+figure_varimax
+
+tab_pca(pcobj2, rotation = 'varimax',
+        nmbr.fctr = 4,
+        digits = 2,
+        show.var = TRUE,
+  string.pov = "Proportion of Variance",
+  string.cpov = "Cumulative Proportion",
+  file = here('figures', 'PCA', 'manual_ignitions', 'Traits.PC.Table.html')) 
+```
+
+#### Adding PC Scores to Data
+```{r warning=FALSE}
+x_traits <-predict(pcobj2)  ### generate scores for each row in flamm.manual.df
+
+pca_traits_data <- as_data_frame(x_traits) 
+
+pca_df2 <- cbind(pca_traits_data, traits.df_pca)
+```
+
+### 3. Comparing Principal Components
+```{r}
+pca_df <- pca_df %>% 
+  select(-PC4, -PC5) %>%  # Not interested in PC4 or PC5 (>80% of variance explained by first three PCs)
+  rename(PC1_flamm = PC1,
+         PC2_flamm = PC2,
+         PC3_flamm = PC3)
+
+pca_df2 <- pca_df2 %>% 
+  select(-PC5, -PC6, -PC7, -PC8, -PC9, -species) %>%  # Not interested in PC5 through PC10 (>80% of variance explained by first four PCs); species variable already in pca_df
+  rename(PC1_traits = PC1,
+         PC2_traits = PC2,
+         PC3_traits = PC3,
+         PC4_traits = PC4)
+
+pca_df_main <- merge(pca_df, pca_df2, by = 'id')
+```
+
+#### Scatterplots
+```{r}
+pc_labels <- c('PC1 (Flamm.)', 'PC2 (Flamm.)', 'PC3 (Flamm.)', 'PC1 (Traits)', 'PC2 (Traits)', 'PC3 (Traits)', 'PC4 (Traits)')
+names(pc_labels) <- c('PC1_flamm', 'PC2_flamm', 'PC3_flamm', 'PC1_traits', 'PC2_traits', 'PC3_traits', 'PC4_traits')
+
+pca_df_main %>% 
+  pivot_longer(cols = c(PC1_flamm, PC2_flamm, PC3_flamm), values_to = 'flamm_pc_score', names_to = 'flamm_pc') %>% 
+  pivot_longer(cols = c(PC1_traits, PC2_traits, PC3_traits, PC4_traits), values_to = 'traits_pc_score', names_to = 'traits_pc') %>% 
+  ggplot(aes(x = traits_pc_score, y = flamm_pc_score)) +
+    geom_point(alpha = 0.5, color = 'gray50') +
+    geom_smooth(method = 'lm', color = 'black', alpha = 0.9) +
+    stat_cor(label.y = 1.5)+ 
+    stat_regline_equation(label.y = 0.9) +
+    facet_grid(flamm_pc ~ traits_pc, scales = 'free', labeller = labeller(flamm_pc = pc_labels, traits_pc = pc_labels)) +
+    labs(x = 'Traits PC Score', y = 'Flamm. PC Score') +
+    theme_bw() +
+    theme(axis.title = element_text(size = 16, face = 'bold'),
+          axis.text = element_text(size = 13),
+          strip.text = element_text(size = 13, face = 'bold'))
+ggsave(here('figures', 'PCA', 'manual_ignitions', 'PC.Regressions.png'), height = 8, width = 10)
+```
+### -*-*-*-*-*-
+
+## Natural Ignitions (n = 37)
+### 1. Flammability Metrics
+#### 1.1. PCA Figure
+Plot setup:
+```{r warning=FALSE}
+flamm.natural.df_pca <- flamm.natural.df %>% 
+  filter(ignition != 0) %>% # No non-ignitions
+   select(fh, fd, pfg, temp_change, heat_flux_change, species, id) %>% 
+   drop_na(fh, fd, pfg, temp_change, heat_flux_change, species)
+
+figure_pca_quant <- (flamm.natural.df_pca[, c("fh", "fd", "pfg", "temp_change", "heat_flux_change", "species")]) %>%  
+ transmute("Flame Duration" = fd, #using spaces to shift labels over instead of \t since \t is leading to little blank squares popping up on the plot
+           "Flame Height" = fh,
+           "Post-flame Glow" = pfg,
+           "Temp Change" = temp_change,
+           "Heat Flux Change" = heat_flux_change
+          ) %>% 
+  na.omit()
+
+figure_pca_cat <- (flamm.natural.df_pca[, c("fh", "fd", "pfg", "temp_change", "heat_flux_change", "species")]) %>%  
+  na.omit() %>% 
+  select(species) %>% 
+  transmute("Species" = species)
+  
+figure_prcomp <- prcomp(na.omit(figure_pca_quant), 
+                          center = TRUE, 
+                          scale = TRUE, 
+                          retx=TRUE)
+  
+figure_pca <- (flamm.natural.df_pca[, c("fh", "fd", "pfg", "temp_change", "heat_flux_change", "species")]) %>%  
+  na.omit() 
+```
+
+```{r warning=FALSE}
+#Setting up plotting data: 
+
+#decisions for plotting:
+choices = 1:2 
+scale = 1
+obs.scale = 1 - scale
+var.scale = scale
+ellipse.prob = 0.68
+labels.size = 3
+circle.prob = 0.69
+choices = 1:2
+
+#Run PCA
+pcobj <- prcomp(na.omit(figure_pca_quant), center = TRUE, scale = TRUE)
+
+# extract PCA components: 
+nobs.factor <- sqrt(nrow(pcobj$x) - 1)
+    d <- pcobj$sdev
+    u <- sweep(pcobj$x, 2, 1/(d * nobs.factor), FUN = "*")
+    v <- pcobj$rotation
+
+  choices <- pmin(choices, ncol(u))
+  df.u <- as.data.frame(sweep(u[, choices], 2, d[choices]^obs.scale, 
+                              FUN = "*"))
+  v <- sweep(v, 2, d^var.scale, FUN = "*")
+  df.v <- as.data.frame(v[, choices])
+  names(df.u) <- c("PC1", "PC2")
+  names(df.v) <- names(df.u)
+  df.u <- df.u * nobs.factor
+
+  r <- sqrt(qchisq(circle.prob, df = 2)) * prod(colMeans(df.u^2))^(1/4)
+  
+v.scale <- rowSums(v^2)
+df.v <- r * df.v/sqrt(max(v.scale)) 
+df.v <- df.v %>% mutate(PC1, PC2)
+df.v$Variables <- rownames(v) 
+PCAloadings = df.v
+#df.v = dataset with loadings 
+
+#dataset with scores and categorical variables for plotting points: 
+PCAvalues <- cbind(df.u, figure_pca_cat)
+
+#dataset with information for plotting circle: 
+theta <- c(seq(-pi, pi, length = 50), seq(pi, -pi, length = 50))
+
+circle <- data.frame(PC1 = r * cos(theta), PC2 = r * sin(theta)) 
+
+#Group by flam. metric: 
+PCA_metrics <- df.v %>% 
+  filter(Variables %in% c("Flame Duration", "Flame Height", "Post-flame Glow", "Temp Change",
+                          "Heat Flux Change"))
+    
+# Calculate the angles and the label offset
+df.v$Angle = ((180/pi) * atan(df.v$PC2/df.v$PC1))
+
+df.v$Offset <- ((-2 * sign(df.v$PC1))/2)
+
+#labels: 
+u.axis.labs <- paste("PC", choices, sep = "")
+u.axis.labs <- paste(u.axis.labs, sprintf("(%0.1f%% explained var.)", 
+                                            100 * pcobj$sdev[choices]^2/sum(pcobj$sdev^2)))
+```
+
+Plot:
+```{r}
+ggplot(PCAvalues, aes(x = PC1, y = PC2)) +
+  ylim(-4, 3) +
+  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues) +
+  stat_ellipse(aes(color = Species)) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  geom_segment(data = PCA_metrics, aes(x = 0, y = 0, 
+                                              xend = PC1, yend = PC2),
+     arrow = arrow(length = unit(1/2, "picas")), 
+    linewidth = .9, alpha = 0.9,
+     color = "black") +
+  annotate("text", 
+          x = (PCA_metrics$PC1 * 1.3), 
+          y = (PCA_metrics$PC2 * 1.1),
+          label = PCA_metrics$Variables, size = 3.5,
+          fontface = 'bold') +
+  theme(panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+          panel.grid.major = element_blank(),  # Hide major gridlines
+          panel.grid.minor = element_blank(),
+          legend.key = element_rect(fill = "white"),
+          legend.position = 'right',
+          legend.title = element_text(face = 'bold', size = 15),
+          legend.text = element_text(face = 'italic', size = 13),
+          axis.title = element_text(face = 'bold', size = 15)) +
+    scale_color_manual(values = c("#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+    #scale_color_lancet() + # no ARTCAL, so manually defining color palette 
+    geom_path(data = circle, color = "black",  size = 1/2, alpha = 1/3) + 
+    xlab(u.axis.labs[1]) + 
+    ylab(u.axis.labs[2]) +
+    coord_equal()
+ggsave(here('figures', 'PCA', 'natural_ignitions', 'Flamm.PCA.png'), height = 7, width = 9)
+```
+
+#### 1.2. PCA Table
+
+```{r warning=FALSE}
+figure_varimax <- varimax(pcobj$rotation[,1:3])
+figure_varimax
+
+tab_pca(pcobj, rotation = 'varimax',
+        nmbr.fctr = 4,
+        digits = 2,
+        show.var = TRUE,
+  string.pov = "Proportion of Variance",
+  string.cpov = "Cumulative Proportion",
+  file = here('figures', 'PCA', 'natural_ignitions', 'Flamm.PC.Table.html')) 
+```
+
+#### Adding PC Scores to Data
+```{r warning=FALSE}
+x_flam <-predict(pcobj)  ### generate scores for each row in flamm.natural.df
+
+pca_flamm_data <- as_data_frame(x_flam) 
+
+pca_df <- cbind(pca_flamm_data, flamm.natural.df_pca)
+```
+
+### 2. Plant Traits
+#### 2.1. PCA Figure
+Plot setup:
+```{r warning=FALSE}
+traits.df_pca <- flamm.natural.df %>% 
+  filter(ignition != 0) %>% # No non-ignitions
+   select(id, species, lfm, mpa, sample_density, LMA, thickness, branching, leaf_mass_ratio, sample_wt, branch_volume) %>% 
+   drop_na(species, lfm, mpa, sample_density, LMA, thickness, branching, leaf_mass_ratio, sample_wt, branch_volume)
+
+figure_pca_quant2 <- (traits.df_pca[, c('species','lfm', 'mpa', 'sample_density', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'sample_wt', 'branch_volume')]) %>%  
+ transmute("Live Fuel Moisture" = lfm, #using spaces to shift labels over instead of \t since \t is leading to little blank squares popping up on the plot
+           "Water Potential" = mpa,
+           "Sample Density (g/cm3)" = sample_density,
+           "Leaf Mass per Area" = LMA,
+           "Thickness (mm)" = thickness,
+           "Branching" = branching,
+           "Leaf Ratio" = leaf_mass_ratio,
+           "Sample Weight (g)" = sample_wt,
+           "Branch Volume (cm3)" = branch_volume) %>% 
+  na.omit()
+
+figure_pca_cat2 <- (traits.df_pca[, c('species', 'lfm', 'mpa', 'sample_density', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'sample_wt', 'branch_volume')]) %>% 
+  na.omit() %>% 
+  select(species) %>% 
+  transmute("Species" = species)
+  
+figure_prcomp2 <- prcomp(na.omit(figure_pca_quant2), 
+                          center = TRUE, 
+                          scale = TRUE, 
+                          retx=TRUE)
+  
+figure_pca2 <- (traits.df_pca[, c('species', 'lfm', 'mpa', 'sample_density', 'LMA', 'thickness', 'branching', 'leaf_mass_ratio', 'sample_wt', 'branch_volume')]) %>%  
+  na.omit() 
+```
+
+```{r warning=FALSE}
+#Setting up plotting data: 
+
+#decisions for plotting:
+choices = 1:2 
+scale = 1
+obs.scale = 1 - scale
+var.scale = scale
+ellipse.prob = 0.68
+labels.size = 3
+circle.prob = 0.69
+choices = 1:2
+
+#Run PCA
+pcobj2 <- prcomp(na.omit(figure_pca_quant2), center = TRUE, scale = TRUE)
+
+# extract PCA components: 
+nobs.factor <- sqrt(nrow(pcobj2$x) - 1)
+    d <- pcobj2$sdev
+    u <- sweep(pcobj2$x, 2, 1/(d * nobs.factor), FUN = "*")
+    v <- pcobj2$rotation
+
+  choices <- pmin(choices, ncol(u))
+  df.u <- as.data.frame(sweep(u[, choices], 2, d[choices]^obs.scale, 
+                              FUN = "*"))
+  v <- sweep(v, 2, d^var.scale, FUN = "*")
+  df.v <- as.data.frame(v[, choices])
+  names(df.u) <- c("PC1", "PC2")
+  names(df.v) <- names(df.u)
+  df.u <- df.u * nobs.factor
+
+  r <- sqrt(qchisq(circle.prob, df = 2)) * prod(colMeans(df.u^2))^(1/4)
+  
+v.scale <- rowSums(v^2)
+df.v <- r * df.v/sqrt(max(v.scale)) 
+df.v <- df.v %>% mutate(PC1, PC2)
+df.v$Variables <- rownames(v) 
+PCAloadings = df.v
+#df.v = dataset with loadings 
+
+#dataset with scores and categorical variables for plotting points: 
+PCAvalues2 <- cbind(df.u, figure_pca_cat2)
+
+#dataset with information for plotting circle: 
+theta <- c(seq(-pi, pi, length = 50), seq(pi, -pi, length = 50))
+
+circle <- data.frame(PC1 = r * cos(theta), PC2 = r * sin(theta)) 
+
+#Group by flam. metric: 
+PCA_metrics2 <- df.v %>% 
+  filter(Variables %in% c("Live Fuel Moisture", "Water Potential", "Sample Density (g/cm3)",
+                          "Leaf Mass per Area", "Thickness (mm)",
+                          "Branching", "Leaf Ratio", "Sample Weight (g)",
+                          "Branch Volume (cm3)"))
+    
+# Calculate the angles and the label offset
+df.v$Angle = ((180/pi) * atan(df.v$PC2/df.v$PC1))
+
+df.v$Offset <- ((-2 * sign(df.v$PC1))/2)
+
+#labels: 
+u.axis.labs <- paste("PC", choices, sep = "")
+u.axis.labs <- paste(u.axis.labs, sprintf("(%0.1f%% explained var.)", 
+                                            100 * pcobj$sdev[choices]^2/sum(pcobj$sdev^2)))
+```
+
+Plot:
+```{r}
+ggplot(PCAvalues2, aes(x = PC1, y = PC2)) +
+  ylim(-4, 3) +
+  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues2) +
+  stat_ellipse(aes(color = Species)) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  geom_segment(data = PCA_metrics2, aes(x = 0, y = 0, 
+                                              xend = PC1, yend = PC2),
+     arrow = arrow(length = unit(1/2, "picas")), 
+    linewidth = .9, alpha = 0.9,
+     color = "black") +
+  annotate("text", 
+          x = (PCA_metrics2$PC1 * 1.3), 
+          y = (PCA_metrics2$PC2 * 1.1),
+          label = PCA_metrics2$Variables, size = 3.5,
+          fontface = 'bold') +
+  theme(panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+          panel.grid.major = element_blank(),  # Hide major gridlines
+          panel.grid.minor = element_blank(),
+          legend.key = element_rect(fill = "white"),
+          legend.position = 'right',
+          legend.title = element_text(face = 'bold', size = 15),
+          legend.text = element_text(face = 'italic', size = 13),
+          axis.title = element_text(face = 'bold', size = 15)) +
+    scale_color_manual(values = c("#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
+    #scale_color_lancet() + # no ARTCAL, so manually defining color palette 
+    geom_path(data = circle, color = "black",  size = 1/2, alpha = 1/3) + 
+    xlab(u.axis.labs[1]) + 
+    ylab(u.axis.labs[2]) +
+    coord_equal()
+ggsave(here('figures', 'PCA', 'natural_ignitions', 'Traits.PCA.png'), height = 7, width = 9)
+```
+
+#### 2.2. PCA Table
+```{r warning=FALSE}
+figure_varimax <- varimax(pcobj2$rotation[,1:3])
+figure_varimax
+
+tab_pca(pcobj2, rotation = 'varimax',
+        nmbr.fctr = 4,
+        digits = 2,
+        show.var = TRUE,
+  string.pov = "Proportion of Variance",
+  string.cpov = "Cumulative Proportion",
+  file = here('figures', 'PCA', 'natural_ignitions', 'Traits.PC.Table.html')) 
+```
+
+#### Adding PC Scores to Data
+```{r warning=FALSE}
+x_traits <-predict(pcobj2)  ### generate scores for each row in flamm.natural.df
+
+pca_traits_data <- as_data_frame(x_traits) 
+
+pca_df2 <- cbind(pca_traits_data, traits.df_pca)
+```
+
+### 3. Comparing Principal Components
+```{r}
+pca_df <- pca_df %>% 
+  select(-PC4, -PC5) %>%  # Not interested in PC4 or PC5 (>80% of variance explained by first three PCs)
+  rename(PC1_flamm = PC1,
+         PC2_flamm = PC2,
+         PC3_flamm = PC3)
+
+pca_df2 <- pca_df2 %>% 
+  select(-PC5, -PC6, -PC7, -PC8, -PC9, -species) %>%  # Not interested in PC5 through PC10 (>80% of variance explained by first four PCs); species variable already in pca_df
+  rename(PC1_traits = PC1,
+         PC2_traits = PC2,
+         PC3_traits = PC3,
+         PC4_traits = PC4)
+
+pca_df_main <- merge(pca_df, pca_df2, by = 'id')
+```
+
+#### Scatterplots
+```{r}
+pc_labels <- c('PC1 (Flamm.)', 'PC2 (Flamm.)', 'PC3 (Flamm.)', 'PC1 (Traits)', 'PC2 (Traits)', 'PC3 (Traits)', 'PC4 (Traits)')
+names(pc_labels) <- c('PC1_flamm', 'PC2_flamm', 'PC3_flamm', 'PC1_traits', 'PC2_traits', 'PC3_traits', 'PC4_traits')
+
+pca_df_main %>% 
+  pivot_longer(cols = c(PC1_flamm, PC2_flamm, PC3_flamm), values_to = 'flamm_pc_score', names_to = 'flamm_pc') %>% 
+  pivot_longer(cols = c(PC1_traits, PC2_traits, PC3_traits, PC4_traits), values_to = 'traits_pc_score', names_to = 'traits_pc') %>% 
+  ggplot(aes(x = traits_pc_score, y = flamm_pc_score)) +
+    geom_point(alpha = 0.5, color = 'gray50') +
+    geom_smooth(method = 'lm', color = 'black', alpha = 0.9) +
+    stat_cor(label.y = 1.5)+ 
+    stat_regline_equation(label.y = 0.9) +
+    facet_grid(flamm_pc ~ traits_pc, scales = 'free', labeller = labeller(flamm_pc = pc_labels, traits_pc = pc_labels)) +
+    labs(x = 'Traits PC Score', y = 'Flamm. PC Score') +
+    theme_bw() +
+    theme(axis.title = element_text(size = 16, face = 'bold'),
+          axis.text = element_text(size = 13),
+          strip.text = element_text(size = 13, face = 'bold'))
+ggsave(here('figures', 'PCA', 'natural_ignitions', 'PC.Regressions.png'), height = 7, width = 9)
+```
