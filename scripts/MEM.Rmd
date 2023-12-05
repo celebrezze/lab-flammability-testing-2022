@@ -9,34 +9,11 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-# packages
-library(tidyverse)
 library(here)
-#library(lubridate)
-#library(ggfortify)
-library(ggpubr)
-library(sjPlot) # for tab_model
-library(psych) #for pairs.panels()
-library(GGally) # For ggcorr()
-library(scales)
-library(lme4) # for lmer
-#library(lmerTest) # to try stepwise selection
-library(remef) # for remef
-library(performance) # for multicollinearity check
-library(car) # for qqPlot
-library(gtools) # for combination()
-library(kableExtra) # to make nice tables
-library(glmmLasso) # specific to running lasso on generalized linear mixed models
-library(glmnet) # 'best' package for running lasso on generalized linear models; also, has good function for cross-validation process
-
-# defining functions
 here = here::here
-ggbiplot = ggbiplot::ggbiplot
-select = dplyr::select
-source(here('scripts', 'mem.selection.function.R')) #this is where mem.selection(), mem.selection.table() and mallows.cp() functions are stored
+source(here("scripts", "source_code.R"))
 
-# reading in data
-flamm.df <- read.csv(here('data', 'processed-data', 'main_dataset.csv'))
+source(here('scripts', 'mem.selection.function.R')) #this is where mem.selection(), mem.selection.table() and mallows.cp() functions are stored
 ```
 
 # Data Structure

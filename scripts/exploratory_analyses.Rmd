@@ -5,39 +5,15 @@ date: "2023-03-30"
 output: html_document
 ---
 
+This script includes a bunch of exploratory data analyses and associated figures; it has not been updated or cleaned in a little while, but it still runs okay and exhibits things we considered when running EDA and formulating an understanding of the dataset
+
 # Setup
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-# packages
-library(tidyverse)
 library(here)
-library(ggsci) # for scale_color_lancet color pallete
-library(lubridate)
-library(ggfortify)
-library(ggpubr)
-library(ggbiplot) #for nicer PCA plots
-library(psych) #for pairs.panels()
-library(sjPlot) #for nice tables of eigenvalues
-library(factoextra) #for k-means clustering
-library(GGally) # For ggcorr()
-library(gam) # for generalized additive models
-library(scales)
-
-# defining functions
 here = here::here
-ggbiplot = ggbiplot::ggbiplot
-
-# reading in data
-flamm.df <- read.csv(here('data', 'processed-data', 'main_dataset.csv'))
-
-flamm.df %>% 
- group_by(species) %>% 
- dplyr::summarise(sw = mean(sample_wt))
-
-# excluding ARCDEN and HETARB
-#flamm.df <- flamm.df %>% 
-  #filter(species != 'ARCDEN' & species != 'HETARB')
+source(here("scripts", "source_code.R"))
 ```
 
 # Summary Boxplots
@@ -124,7 +100,6 @@ ggplot(aes(x = species, y = norm_value, color = species)) +
 ggsave(here('figures', 'EDA', 'normalized.flamm.metrics.boxplot.jpg'), height = 12, width = 20)
 ```
 
-
 # Scatterplots
 ```{r}
 flamm.df %>% 
@@ -156,7 +131,7 @@ flamm.df.long.scatter %>%
     geom_point(alpha = 0.6, size = 1.5) +
   geom_smooth(method = 'lm', linewidth = 1, alpha = 0.8, se = F) +
   labs(x = x.lab, y = 'Flamm. Metric Value', color = 'Species')  +
-  facet_wrap(~trait, ncol = 3, scales = 'free_y', labeller = labeller(trait = flam_labels )) +
+  facet_wrap(~trait, ncol = 3, scales = 'free_y', labeller = labeller(trait = flam_labels)) +
   scale_color_manual(values = c('#ADB6B6B2', '#1B1919B2', '#42B540B2', '#ED0000B2', '#AD002AB2', '#0099B4B2', '#925E9FB2', '#925E9FB2', '#FDAF91B2', '#00468BB2')) +
   theme_bw() +
   theme(axis.title = element_text(face = 'bold', size = 16),
@@ -166,7 +141,6 @@ flamm.df.long.scatter %>%
         strip.text = element_text(face = 'bold', size = 16))
 }
 ```
-
 
 ## Vs. Hydration
 Water Potential
@@ -620,7 +594,7 @@ flamm.df %>%
           strip.text = element_text(face = 'bold', size = 16))
 # Tough to parse species differences and date differences
 
-spp <- c('ARTCAL', 'CEAGRI', 'ERIKAR', 'HETARB', 'IRIDOU', 'MALLAU', 'ARCDEN', 'SALAPI', 'SALLEU')
+spp <- c('ARTCAL', 'CEAGRI', 'ERIKAR', 'HETARB', 'MALLAU', 'ARCDEN', 'SALAPI', 'SALLEU')
 plot.list <- list(NULL)
 for(i in 1:length(spp)) {
   df <- flamm.df %>%  
@@ -647,7 +621,6 @@ plot.list[[5]]
 plot.list[[6]]
 plot.list[[7]]
 plot.list[[8]]
-plot.list[[9]]
 ```
 
 # Manual Ignitions
@@ -658,7 +631,7 @@ flamm.df.manual <- flamm.df %>%
 
 # First, interspecific differences in time to ignition
 flamm.df.manual %>% 
-  mutate(species = factor(species, levels = c('IRIDOU', 'CEAGRI', 'ARTCAL', 'ARCDEN', 'SALAPI', 'MALLAU', 'SALLEU', 'ERIKAR', 'HETARB', 'QUEAGR'))) %>% 
+  mutate(species = factor(species, levels = c('CEAGRI', 'ARTCAL', 'ARCDEN', 'SALAPI', 'MALLAU', 'SALLEU', 'ERIKAR', 'HETARB', 'QUEAGR'))) %>% 
   ggplot(aes(x = species, y = tti)) + 
     geom_jitter(width = 0.2, aes(color = species)) +
     geom_boxplot(alpha = 0.2, outlier.shape = NA) +
@@ -1502,8 +1475,7 @@ flamm.df %>%
 ```
 
 
-# Summary Plots: Sample Size vs. FD/FH
-Per request by KF
+# Sample Size vs. FD/FH
 ```{r}
 size_labels <- c('Sample Weight (g)', 'Dry Weight (g)', 'Wet Weight (g)', 'Sample Volume (cm3)')
 names(size_labels) <- c('sample_wt', 'dw_flam_sample', 'ww_flam_sample', 'branch_volume')

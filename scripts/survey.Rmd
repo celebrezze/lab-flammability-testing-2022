@@ -7,20 +7,12 @@ output: html_document
 #Setup
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(janitor)
-library(here)
-library(tidyverse)
-library(kableExtra)
-library(HH)
-library(devtools)
-library(likert)
-library(cowplot)
-library(hrbrthemes)
-library(ggpubr)
-here = here::here
-summarise = dplyr::summarise
-rename = dplyr::rename
 
+library(here)
+here = here::here
+source(here("scripts", "source_code.R"))
+
+# ggplot theme for script (Indra)
 ggplot <- function(...) { ggplot2::ggplot(...) + 
     theme(panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
           panel.grid.major = element_blank(),  # Hide major gridlines
@@ -28,7 +20,7 @@ ggplot <- function(...) { ggplot2::ggplot(...) +
 }
 ```
 
-#Data
+# Raw Data
 ```{r, warning = FALSE}
 data <- read_csv(here("data", "raw-data", "survey", "wonderlabs.csv"), show_col_types = FALSE) %>% 
   clean_names() %>% 
@@ -43,16 +35,16 @@ data <- read_csv(here("data", "raw-data", "survey", "wonderlabs.csv"), show_col_
   mutate(income = as.numeric(income)) %>% 
   mutate(age = 2021 - birthyear) 
 ```
-#--------------------------------------------------------------------
 
-#Demographics
+#-----------------------------
+
+# Demographics
+
+## Data Wrangling
 ```{r, warning = FALSE}
 demographics <- data %>% 
   dplyr::select(response_id, user_language, rent_own, control, birthyear, gender, race, language, income, age, time1)
-```
 
-
-```{r}
 income <- demographics %>% 
   drop_na(income) %>% 
   summarise(mean = mean(income), 
@@ -66,7 +58,7 @@ race<- demographics %>%
 race
 ```
 
-### What percent of respondents own vs rent their home? 
+## Rent vs. Own
 ```{r}
 renters_counts <- demographics %>% 
   drop_na(rent_own, control) %>% 
@@ -82,7 +74,8 @@ renters_counts_props
 kable(renters_counts_props) %>%
   kable_classic(full_width = F, html_font = "Cambria")
 ```
-### What language do responndents speak?
+
+## First Language
 ```{r, include = FALSE}
 language_counts <- demographics %>% 
   drop_na(language) %>% 
@@ -90,7 +83,7 @@ language_counts <- demographics %>%
 language_counts
 ```
 
-### How old are they?
+## Age
 ```{r}
 age_table <- demographics %>% 
   drop_na(age) %>% 
@@ -101,6 +94,7 @@ age_table <- demographics %>%
 age_table
 ```
 
+## Gender
 ```{r}
 gender_table <- demographics %>% 
   drop_na(gender) %>% 
@@ -109,9 +103,9 @@ gender_table
 ```
 
 
-#--------------------------------------------------------------------
+#-----------------------------
 
-# Ecosystem services: 
+# Ecosystem Services
 
 ```{r}
 es_data_id <- data %>% 
@@ -174,7 +168,7 @@ mutate(score_item = sum_item/n) %>%
 mutate(mean_score_item = mean(score_item))
 ```
 
-### ES and maintainance: 
+### ES vs. Yard Maintanence
 
 ```{r, warning = FALSE}
 maintainance_1 <- data %>% 
@@ -237,7 +231,7 @@ ggplot(aes(y = mean_score_trait, x = trait_names)) +
   facet_wrap(~category)
 ```
 
-#Plant Traits:
+# Plant Traits
 ```{r}
 plants <- data %>% 
   dplyr::select(response_id, trait, writein_trait, time1) %>% 
@@ -322,7 +316,7 @@ ggarrange(traits.survey.plot, repr.plot,
 #ggsave(here('figures', 'main_figures', 'desirable.traits.survey.png'), height = 12, width = 10)
 ```
 
-# Plant species
+# Plant Species List
 ```{r}
 species_list_data <- read.csv(here('data', 'processed-data', 'species_list_data.csv'))[1:145,]
 
@@ -363,7 +357,7 @@ ggarrange(species_list,
           font.label = list(size = 28),
           ncol = 1)
 
-ggsave(here('figures', 'main_figures', 'species.tested.vs.survey.png'), height = 15, width = 7)
+ggsave(here('figures', 'supp_figures', 'species.tested.vs.survey.png'), height = 15, width = 7)
 ```
 
 -----------------------------------------------------------------
@@ -392,14 +386,12 @@ mergeDTs <- function(dt_list, by = NULL, sort = FALSE) {
       merge(..., by = by, all = TRUE, sort = sort)
     }, dt_list)
 }
-
-#mergeDTs(dt_list)
 ```
-#Likert scale
+
+#Likert Scale
 
 ```{r}
 es_data <- data %>% 
-  #dplyr::select(3, 5:28) %>%  #includes response ID
   dplyr::select(5:28) %>% 
   drop_na %>% 
   as.data.frame() %>% 
@@ -474,7 +466,7 @@ es_likert_cat <- merge(es_likert_counts, es_likert_df) %>%
          mean_value = mean)
 ```
 
-#MAIN FIGURE: 
+## Main Likert Scale Figure
 ```{r}
 melted <- reshape::melt(es_likert_df) %>% 
   mutate(item_title = str_replace_all(Item, "_", " ")) %>% 
@@ -598,13 +590,16 @@ survey_likert
 #ggsave(here("figures", 'main_figures', 'survey_likert.jpg'), height = 8, width = 12) 
 ```
 
-## Arranged w/ Desired Traits
+# Main Figure: Likert and Desirable Traits
 ```{r}
 plot_grid(survey_likert, traits.survey.plot,
           ncol = 2, nrow = 1, rel_widths = c(1.05, 0.7), labels = c('a', 'b'), label_size = 28)
-ggsave(here("figures", 'main_figures', 'arranged_survey_figure.jpg'), height = 8, width = 17)
+ggsave(here("figures", 'main_figures', 'survey_figure.jpg'), height = 8, width = 17)
 ```
 
+#-----------------------------
+
+# Extra Figures
 
 ```{r}
 melted %>% 
@@ -720,6 +715,5 @@ all <- # Create Flow timeseries plot that spans the grid by making one plot_grid
 title <- ggdraw() + draw_label("ES Categories and Valuation", fontface='bold')
 
 plot_grid(provisioning, cultural, regulating, nrow = 4, c("", "", ""),  rel_heights = c(1, 1, 1))
-
 ```
 

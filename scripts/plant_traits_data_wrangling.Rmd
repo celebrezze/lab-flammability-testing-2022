@@ -8,24 +8,12 @@ output: html_document
 # Setup
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
-# Packages
-library(tidyverse)
-library(magrittr)
-library(janitor)
-library(dplyr)
 library(here)
-library(bayestestR) # For area_under_curve
-
-# Functions
-rename = dplyr::rename
 here = here::here
-summarise = dplyr::summarise
-group_by = dplyr::group_by
-select = dplyr::select
+source(here("scripts", "source_code.R"))
 ```
 
-# Initial Data Cleaning
+# Raw Data
 ## Leaf Data
 ```{r}
 # load in data
@@ -516,12 +504,12 @@ main_df <- main_df %>%
     species == 'SALLEU' ~ (dw_flam_sample - as.numeric(dw_avgs[9,2]))/as.numeric(dw_avgs[9,3]))))
 ```
 
-# Cutting IRIDOU
+# Removing IRIDOU
+We decided to remove IRIDOU from consideration pretty late on, so it is removed here rather than earlier on in the data wrangling pipeline
 ```{r}
 main_df <- main_df %>% 
   filter(species != 'IRIDOU')
 ```
-
 
 # Writing csv
 ```{r}
