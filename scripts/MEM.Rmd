@@ -1421,7 +1421,6 @@ ggplot(aes_string(x = 'thickness', y = 'flam_val'))  +
 
 
 # Testing for Interactions
-Using ChatGPT generated code, integrated with my previously made function
 ```{r}
 # Defining predictors we're interested in as a character vector
 predictors <- c('lfm', 'LMA', 'sample_wt', 'leaf_mass_ratio', 'branching', 'mpa', 'start_temp', 'dmc', 'branch_volume', 'stem_sav', 'leaf_area', 'leaf_sav', 'thickness', 'species')
@@ -1739,7 +1738,6 @@ ggplot(aes(x = sample_wt, y = r_fh), data = concept.remef.df) +
 ggplot(aes(x = r_fh, y = fh/(1 + sample_wt)), data = concept.remef.df) +
   geom_point()
 ```
-
 
 
 # REMEF for Interspecific Boxplots
