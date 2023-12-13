@@ -302,7 +302,21 @@ flamm.df %>%
           axis.text.y = element_text(size = 15))
 ```
 
+### Dotplot Data Wrangling
+```{r}
+flamm.dotplot.df1 <- flamm.df %>% 
+  group_by(species, plant) %>% 
+  summarise(lfm = mean(lfm), dmc = mean(dmc), leaf_mass_ratio = mean(leaf_mass_ratio))
+
+flamm.dotplot.df2 <- flamm.dotplot.df1 %>% 
+  group_by(species) %>% 
+  summarise(sd_lfm = sd(lfm), sd_dmc = sd(dmc), sd_leaf_mass_ratio = sd(leaf_mass_ratio),
+            lfm = mean(lfm), dmc = mean(dmc), leaf_mass_ratio = mean(leaf_mass_ratio))
+```
+
+
 ### LFM
+Boxplot
 ```{r}
 lfm.boxplot <- flamm.df %>%
   mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
@@ -321,7 +335,28 @@ lfm.boxplot <- flamm.df %>%
 lfm.boxplot
 ```
 
+Dotplot
+```{r}
+lfm.dotplot <- flamm.dotplot.df2 %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot(aes(x = species, color = species)) +
+    geom_point(aes(y = lfm), size = 10) +
+    geom_linerange(aes(ymin = lfm-sd_lfm, ymax = lfm+sd_lfm), linewidth = 1) +
+    labs(x = 'Species', y = 'Live Fuel Moisture (%)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+lfm.dotplot
+```
+
+
 ### DMC
+Boxplot
 ```{r}
 dmc.boxplot <- flamm.df %>%
   mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
@@ -340,7 +375,28 @@ dmc.boxplot <- flamm.df %>%
 dmc.boxplot
 ```
 
+Dotplot
+```{r}
+dmc.dotplot <- flamm.dotplot.df2 %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot(aes(x = species, color = species)) +
+    geom_point(aes(y = dmc), size = 10) +
+    geom_linerange(aes(ymin = dmc-sd_dmc, ymax = dmc+sd_dmc), linewidth = 1) +
+    labs(x = 'Species', y = 'Dry Matter Content (%)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+dmc.dotplot
+```
+
+
 ### Leaf Mass Ratio
+Boxplot
 ```{r}
 lmr.boxplot <- flamm.df %>%
   mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
@@ -358,6 +414,27 @@ lmr.boxplot <- flamm.df %>%
           axis.text.y = element_text(size = 15))
 lmr.boxplot
 ```
+
+Dotplot
+```{r}
+lmr.dotplot <- flamm.dotplot.df2 %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  mutate(sd_leaf_mass_ratio = sd_leaf_mass_ratio*100, leaf_mass_ratio = leaf_mass_ratio*100) %>% 
+  ggplot(aes(x = species, color = species)) +
+    geom_point(aes(y = leaf_mass_ratio), size = 10) +
+    geom_linerange(aes(ymin = leaf_mass_ratio-sd_leaf_mass_ratio, ymax = leaf_mass_ratio+sd_leaf_mass_ratio), linewidth = 1) +
+    labs(x = 'Species', y = 'Leaf Mass Ratio (%)') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+lmr.dotplot
+```
+
 
 ## Arranging
 ```{r}
@@ -382,12 +459,18 @@ ggarrange(top, bottom, nrow = 2, ncol = 1)
 #ggsave(here('figures', 'main_figures', 'five.panel.spp.boxplots.png'), height = 9, width = 13.5) # height was 9 w/ two rows
 
 # expanded version
-ggarrange(fh.boxplot, fd.boxplot, hf.boxplot, tc.boxplot, sw.boxplot, branching.boxplot, lfm.boxplot, dmc.boxplot, lmr.boxplot,
+ggarrange(fh.boxplot, fd.boxplot, hf.boxplot, tc.boxplot, sw.boxplot, branching.boxplot, lfm.dotplot, dmc.dotplot, lmr.dotplot,
           labels = c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'),
           font.label = list(size = 28), ncol = 3, nrow = 3)
 
 
 #ggsave(here('figures', 'main_figures', 'spp.boxplots.png'), height = 14, width = 13.5) # height was 9 w/ two rows
+
+# dotplots
+spp.dotplots <- ggarrange(lfm.dotplot, dmc.dotplot, lmr.dotplot, ncol = 3, nrow = 1)
+spp.dotplots
+
+ggsave(here('figures', 'extra_figures', 'spp.dotplots.png'), height = 4, width = 13.5) # height was 9 w/ two rows
 ```
 
 # Main Figure: Boxplots
@@ -412,13 +495,14 @@ sw.spp.tukey.labels <- sw.spp.tukey.labels %>%
 branching.spp.tukey.labels <- branching.spp.tukey.labels %>% 
   mutate(variable = 'branching') %>% 
   mutate(y.pos = adj + 0.65)
+# if you prefer boxplots of LFM, DMC, LMR, then include this in tukey.labels.df
 no.tukey.labels.df <- data.frame(species = c(rep(c("HETARB", "CEAGRI", "SALAPI", "MALLAU", "SALLEU", "ARCDEN", "ARTCAL", "ERIKAR"), 3)),
                                  letters = c(rep('', 24)),
                                  adj = c(rep(0, 24)),
                                  y.pos = c(rep(0, 24)),
                                  variable = c(rep('lfm', 8), rep('dmc', 8),
                                               rep('leaf_mass_ratio', 8)))
-tukey.labels.df <- rbind(fh.spp.tukey.labels, fd.spp.tukey.labels, tc.spp.tukey.labels, hf.spp.tukey.labels, sw.spp.tukey.labels, branching.spp.tukey.labels, no.tukey.labels.df)
+tukey.labels.df <- rbind(fh.spp.tukey.labels, fd.spp.tukey.labels, tc.spp.tukey.labels, hf.spp.tukey.labels, sw.spp.tukey.labels, branching.spp.tukey.labels)
 ```
 
 ## Visualization
@@ -433,10 +517,10 @@ variable_names <- c(fh = 'Flame Height (cm)',
                     dmc  = 'Dry Matter Content (%)',
                     leaf_mass_ratio = 'Leaf Mass Ratio (%)')
 
-flamm.df %>% 
+main.boxplots <- flamm.df %>% 
   filter(fd < 70, temp_change < 100, branching < 0.75, leaf_mass_ratio > 0.4) %>% 
   pivot_longer(cols = c(fh, fd, temp_change, heat_flux_change, sample_wt,
-                        branching, lfm, dmc, leaf_mass_ratio),
+                        branching),
                names_to = 'variable',
                values_to = 'value') %>% 
   mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU', 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
@@ -446,7 +530,7 @@ flamm.df %>%
     geom_text(aes(x = species, y = y.pos, label = letters), fontface = 'bold',
               data = tukey.labels.df, size = 6) +
     facet_wrap(~factor(variable, c('fh', 'fd', 'heat_flux_change', 'temp_change', 'sample_wt',
-                        'branching', 'lfm', 'dmc', 'leaf_mass_ratio')),
+                        'branching')),
                scales = 'free_y',
                strip.position = 'left',
                labeller = as_labeller(variable_names)) +
@@ -454,12 +538,17 @@ flamm.df %>%
     theme_bw() +
     theme(legend.position = 'none',
           axis.title = element_blank(),
-          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          #axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75), # hash out if including dotplots
           axis.text.y = element_text(size = 15),
           strip.background = element_blank(),
           strip.placement = 'outside',
           strip.text = element_text(size = 17, face = 'bold'))
-  
+main.boxplots
+
+plot_grid(main.boxplots, spp.dotplots, rel_heights = c(2, 1.12), ncol = 1)
+
 ggsave(here('figures', 'main_figures', 'clean.spp.boxplots.png'), height = 12, width = 13.5) # height was 9 w/ two rows
 ```
 
