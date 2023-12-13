@@ -123,8 +123,8 @@ Plot:
 ```{r}
 flam.pca <- ggplot(data = PCAvalues, aes(x = PC1, y = PC2)) +
   ylim(-3.5, 3.5) +
-  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues) +
-  stat_ellipse(aes(color = Species)) +
+  geom_point(size = 1.75, alpha = 0.6, aes(color = Species), data = PCAvalues) +
+  stat_ellipse(aes(color = Species), alpha = 0.6) +
   guides(color = guide_legend(override.aes = list(size = 3))) +
   geom_segment(data = PCA_metrics, aes(x = 0, y = 0, 
                                               xend = PC1, yend = PC2),
@@ -132,7 +132,7 @@ flam.pca <- ggplot(data = PCAvalues, aes(x = PC1, y = PC2)) +
     linewidth = .9, alpha = 0.9,
      color = "black") +
   annotate("text", 
-          x = (PCA_metrics$PC1 * 1.9), 
+          x = (PCA_metrics$PC1 * 1.65), 
           y = (PCA_metrics$PC2 * 1.2),
           label = PCA_metrics$Variables, size = 6,
           fontface = 'bold') +
@@ -193,12 +193,12 @@ figure_pca_quant2 <- (traits.df_pca[, c('lfm', 'mpa', 'LMA', 'thickness', 'branc
  transmute("LFM" = lfm,  # added spaces to adjust label position
            "Water Potential" = mpa,
            "LMA" = LMA,
-           "Thickness" = thickness,
+           "     Thickness" = thickness,
            "Branching" = branching,
-           "Leaf Ratio\n" = leaf_mass_ratio,
+           "Leaf Ratio" = leaf_mass_ratio,
            #"Sample Weight" = sample_wt,
-           "\nDry Matter Content" = dmc, # added spaces to adjust label position
-           "Leaf SA:V" = leaf_sav,
+           "\nDMC     " = dmc, # added spaces to adjust label position
+           "\nLeaf SA:V" = leaf_sav,
            "Stem SA:V" = stem_sav) %>% 
   na.omit()
 
@@ -267,8 +267,8 @@ circle <- data.frame(PC1 = r * cos(theta), PC2 = r * sin(theta))
 #Group by flam. metric: 
 PCA_metrics2 <- df.v %>% 
   filter(Variables %in% c("LFM", "Water Potential", "Sample Density", "LMA",
-           "Thickness", "Branching", "Leaf Ratio\n", "\nDry Matter Content",
-           "Leaf SA:V", "Stem SA:V"))
+           "     Thickness", "Branching", "Leaf Ratio", "\nDMC     ",
+           "\nLeaf SA:V", "Stem SA:V"))
     
 # Calculate the angles and the label offset
 df.v$Angle = ((180/pi) * atan(df.v$PC2/df.v$PC1))
@@ -286,8 +286,8 @@ Plot:
 traits.pca <- ggplot(PCAvalues2, aes(x = PC1, y = PC2)) +
   ylim(-3.8, 2.4) +
   xlim(-2.1, 2.4) +
-  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues2) +
-  stat_ellipse(aes(color = Species)) +
+  geom_point(size = 1.75, alpha = 0.6, aes(color = Species), data = PCAvalues2) +
+  stat_ellipse(aes(color = Species), alpha = 0.6) +
   guides(color = guide_legend(override.aes = list(size = 3))) +
   geom_segment(data = PCA_metrics2, aes(x = 0, y = 0, 
                                               xend = PC1, yend = PC2),
@@ -295,7 +295,7 @@ traits.pca <- ggplot(PCAvalues2, aes(x = PC1, y = PC2)) +
     linewidth = .9, alpha = 0.9,
      color = "black") +
   annotate("text", 
-          x = (PCA_metrics2$PC1 * 1.3), 
+          x = (PCA_metrics2$PC1 * 1.34), 
           y = (PCA_metrics2$PC2 * 1.2),
           label = PCA_metrics2$Variables, size = 6,
           fontface = 'bold') +
@@ -416,7 +416,7 @@ PC1 vs PC1
 ```{r}
 pc1.scatterplot <- pca_df_main %>% 
   ggplot(aes(x = PC1_traits, y = PC1_flamm)) +
-    geom_point(alpha = 0.5, aes(color = species)) +
+    geom_point(alpha = 0.6, aes(color = species)) +
     geom_smooth(method = 'lm', color = 'black', alpha = 0.75, fill = 'gray75') +
     stat_cor(label.y.npc = 'bottom', label.x.npc = 'left', size = 6, fontface = 'bold')+ 
     #stat_regline_equation(label.y.npc = 'bottom', label.x.npc = 'left', size = 3) +

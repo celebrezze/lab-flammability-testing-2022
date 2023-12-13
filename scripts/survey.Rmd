@@ -22,7 +22,7 @@ ggplot <- function(...) { ggplot2::ggplot(...) +
 
 # Raw Data
 ```{r, warning = FALSE}
-data <- read_csv(here("data", "raw-data", "survey", "wonderlabs.csv"), show_col_types = FALSE) %>% 
+data <- read_csv(here("data", "raw-data", "survey", "survey_data.csv"), show_col_types = FALSE) %>% 
   clean_names() %>% 
   filter(response_type != "Survey Preview") %>% 
   dplyr::select(-progress, -finished, -distribution_channel) %>% 
