@@ -42,30 +42,60 @@ r.flamm.index.top <- r.flam.index.top %>% # so that minimum possible value is 0,
   mutate(ignitability = prop_ig, combustibility = (fh + heat_flux_change + temp_change)/3, sustainability = fd) %>% 
   dplyr::select(species, ignitability, combustibility, sustainability) %>% 
   ungroup() %>% 
-  mutate(flam.score = (ignitability + combustibility + sustainability)/ 3)
+  mutate(flam.score = (ignitability + combustibility + sustainability)/ 3) %>% 
+  mutate(species = case_when(species == 'ARCDEN' ~ 'Ar. densiflora',
+                             species == 'CEAGRI' ~ 'Ce. griseus',
+                             species == 'ARTCAL' ~ 'Ar. californica',
+                             species == 'ERIKAR' ~ 'Er. karvinskianus',
+                             species == 'HETARB' ~ 'He. arbutifolia',
+                             species == 'MALLAU' ~ 'Ma. laurina',
+                             species == 'SALAPI' ~ 'Sa. apiana',
+                             species == 'SALLEU' ~ 'Sa. leucophylla'))
 
 # color
 r.flamm.index.top$color <- c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')
+
+# legend triangle
+r.flamm.index.legend <- data.frame(species = c('Legend'), ignitability = c(0.5), combustibility = c(0.5), sustainability = c(0.5), color = c('white'))
 ```
 
 Plotting
 ```{r}
 par(mfrow = c(3, 3), mar = c(0, 0, 2, 0.01))
+
+# Species Triangles
 for(i in 1:nrow(r.flamm.index.top)){
-TernaryPlot("Ign.", "Com.", "Sus.",
+TernaryPlot(" ", " ", " ",
             grid.lines = 0,
             grid.minor.lines = 0,
             lab.cex = 3.1,
             bg = 'transparent',
             col = r.flamm.index.top$color[i])
 
-title(r.flamm.index.top[i,1], cex.main = 3)
+title(r.flamm.index.top[i,1], cex.main = 3.5, font.main = 4)
+
 
 # Add an arrow
 TernaryArrows(c(50, 50, 50), c(r.flamm.index.top$ignitability[i], 0.15, 0.15), length = 0.1*r.flamm.index.top$ignitability[i], lwd = 2.3*r.flamm.index.top$ignitability[i], col = "black")
 TernaryArrows(c(50, 50, 50), c(0.15, r.flamm.index.top$combustibility[i], 0.15), length = 0.1*r.flamm.index.top$combustibility[i], lwd = 2.3*r.flamm.index.top$combustibility[i], col = "black")
 TernaryArrows(c(50, 50, 50), c(0.15, 0.15, r.flamm.index.top$sustainability[i]), length = 0.1*r.flamm.index.top$sustainability[i], lwd = 2.3*r.flamm.index.top$sustainability[i], col = "black")
 }
+
+# Legend Triangle
+TernaryPlot("Ign.", "Comb.", "Sus.",
+            grid.lines = 0,
+            grid.minor.lines = 0,
+            lab.cex = 3.1,
+            bg = 'transparent',
+            col = r.flamm.index.legend$color[1])
+
+title(r.flamm.index.legend$species[1], cex.main = 3.5)
+
+# Add an arrow
+TernaryArrows(c(50, 50, 50), c(r.flamm.index.legend$ignitability[1], 0.15, 0.15), length = 0.1*r.flamm.index.legend$ignitability[1], lwd = 2.3*r.flamm.index.legend$ignitability[1], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.15, r.flamm.index.legend$combustibility[1], 0.15), length = 0.1*r.flamm.index.legend$combustibility[1], lwd = 2.3*r.flamm.index.legend$combustibility[1], col = "black")
+TernaryArrows(c(50, 50, 50), c(0.15, 0.15, r.flamm.index.legend$sustainability[1]), length = 0.1*r.flamm.index.legend$sustainability[1], lwd = 2.3*r.flamm.index.legend$sustainability[1], col = "black")
+
 flam.triangles <- recordPlot()
 ```
 
@@ -126,23 +156,23 @@ For this version, top-performing models were used and fixed and random effects w
 ```{r}
 # Visualization
 # 'ARTCAL', 'ARCDEN', 'CEAGRI', 'ERIKAR', 'HETARB', 'MALLAU', 'SALAPI', 'SALLEU'
-flam_scores$labx <- c(0.06, -0.31, -1.4, -2.1, 0.32, 0.38, 0.73, 0.57)
+flam_scores$labx <- c(0.06, -0.31, -1.4, -2.08, 0.32, 0.38, 0.73, 0.57)
 flam_scores$laby <- c(0.02, -0.4, 1.38, -1.32, -0.65, -0.33, 0.13, 1.8)
 
 es.vs.flam <- ggplot(data=flam_scores) +
   geom_point(aes(x=es.score, y=flam.score, color=species), size=12, alpha=0.75) + 
   geom_text(vjust=0, hjust=-0.15, aes(x=labx, y=laby, label=species), fontface = 'bold', size = 12) +
-  annotate(geom = 'segment', x = -1.6, xend = 1.05, y = -2, yend = -2, linewidth = 2,
+  annotate(geom = 'segment', x = -1.5, xend = 1, y = -2, yend = -2, linewidth = 2,
            arrow = arrow(ends = 'both', angle = 20), color = 'gray60') + # desirability score arrow
-  annotate('text', x = 1.27, y = -2, label = 'More \nDesirable', size = 7,
+  annotate('text', x = 1.22, y = -2, label = 'More \nDesirable', size = 9,
            fontface = 'bold', color = 'gray60') +
-  annotate('text', x = -1.82, y = -2, label = 'Less \nDesirable', size = 7,
+  annotate('text', x = -1.72, y = -2, label = 'Less \nDesirable', size = 9,
            fontface = 'bold', color = 'gray60') +
-  annotate(geom = 'segment', x = -2.2, xend = -2.2, y = -1.35, yend = 1.75, linewidth = 2,
+  annotate(geom = 'segment', x = -2.16, xend = -2.16, y = -1.35, yend = 1.75, linewidth = 2,
            arrow = arrow(ends = 'both', angle = 20), color = 'gray60') + # flammability score arrow
-  annotate('text', x = -2.18, y = 1.97, label = 'More \nFlammable', size = 7,
+  annotate('text', x = -2.13, y = 1.97, label = 'More \nFlammable', size = 9,
            fontface = 'bold', color = 'gray60') +
-  annotate('text', x = -2.18, y = -1.57, label = 'Less \nFlammable', size = 7,
+  annotate('text', x = -2.13, y = -1.57, label = 'Less \nFlammable', size = 9,
            fontface = 'bold', color = 'gray60') +
   labs(x = 'Desirable Traits Score', y = 'Flammability Score') +
   scale_color_manual(values = c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')) +

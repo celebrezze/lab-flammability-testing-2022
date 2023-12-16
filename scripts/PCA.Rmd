@@ -474,8 +474,18 @@ tab_pca(second_order_pcobj, rotation = 'varimax',
 # 4. Main Figure: Arranging Figures
 ## Legend
 ```{r}
-legend <- get_legend(ggplot(PCAvalues2, aes(x = PC1, y = PC2)) +
-  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues2) +
+PCAvalues_legend <- PCAvalues2 %>% 
+  mutate(Species = case_when(Species == 'ARCDEN' ~ 'Ar. densiflora',
+                             Species == 'CEAGRI' ~ 'Ce. griseus',
+                             Species == 'ARTCAL' ~ 'Ar. californica',
+                             Species == 'ERIKAR' ~ 'Er. karvinskianus',
+                             Species == 'HETARB' ~ 'He. arbutifolia',
+                             Species == 'MALLAU' ~ 'Ma. laurina',
+                             Species == 'SALAPI' ~ 'Sa. apiana',
+                             Species == 'SALLEU' ~ 'Sa. leucophylla'))
+
+legend <- get_legend(ggplot(PCAvalues_legend, aes(x = PC1, y = PC2)) +
+  geom_point(size = 1.75, alpha = .9, aes(color = Species), data = PCAvalues_legend) +
   stat_ellipse(aes(color = Species)) +
   guides(color = guide_legend(override.aes = list(size = 3))) +
   theme(legend.key = element_rect(fill = "white"),
