@@ -281,6 +281,58 @@ traits.survey.plot <- pct_plants %>%
 traits.survey.plot
 ```
 
+## Pie Chart
+```{r}
+pie.text <- pct_plants %>% 
+  arrange(desc(trait_names)) %>% 
+  mutate(prop = pct / sum(pct_plants$pct) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop) %>% 
+  mutate(trait_names = ifelse(trait_names == 'Wildlife Habitat', 'Wildlife \nHabitat', trait_names))
+pie.text$rot <- c(70, 47, 20, -25, 0)
+
+desirable.pie <- pct_plants %>%
+  ggplot(aes(fill = trait_names, y = pct, x = '')) +
+  geom_bar(stat = 'identity', width = 1) +
+  coord_polar('y', start = 0) +
+  labs(y = '% of Responses',
+       fill = "Trait") +
+  geom_text(data = pie.text, aes(y = ypos, label = trait_names, angle = rot), color = "white", size=4.5, face = 'bold') +
+  theme_void() +
+  theme(legend.position = 'none')
+desirable.pie
+```
+
+## Doughnut Plot
+```{r}
+doughnut_pct <- pct_plants %>%
+  mutate(pct = pct/100) %>% 
+  arrange(desc(pct))
+
+# Compute the top of each rectangle
+doughnut_pct$ymax = cumsum(doughnut_pct$pct)
+
+# Compute the bottom of each rectangle
+doughnut_pct$ymin = c(0, head(doughnut_pct$ymax, n=-1))
+
+# Compute label position
+doughnut_pct$labelPosition <- (doughnut_pct$ymax + doughnut_pct$ymin) / 2
+
+desirable.doughnut <- doughnut_pct %>% 
+  ggplot(aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = trait_names)) +
+  geom_rect() +
+  #geom_label(x = 3.5, aes(y = labelPosition, label = trait_names), size = 4) +
+  scale_fill_manual(values = c('#ADB6B6B2', '#42B540B2', '#1B1919B2', '#925E9FB2', '#0099B4B2')) +
+  coord_polar(theta = 'y') +
+  labs(y = '% of Responses',
+       fill = "Trait") +
+  xlim(2.5, 4) +
+  theme_void() +
+  theme(legend.position = 'none')
+desirable.doughnut
+ggsave(here("figures", 'main_figures', 'desirable_doughnut.jpg'), height = 8, width = 8) 
+```
+
+
 Setting up dataframe showing how our selected speccies fit into the categories described in the above barplot
 ```{r}
 species <- c('ARCDEN', 'ARTCAL', 'CEAGRI', 'ERIKAR', 'HETARB', 'IRIDOU', 'MALLAU', 'SALAPI', 'SALLEU')
@@ -472,17 +524,27 @@ melted <- reshape::melt(es_likert_df) %>%
   mutate(item_title = str_replace_all(Item, "_", " ")) %>% 
   mutate(item_title = str_to_title(item_title)) %>% 
   mutate(item_title = str_replace_all(item_title, " Or ", "/")) %>% 
-  mutate(item_title = str_replace_all(item_title, "Private Recreation Physical Activity", "Private Recreation"),
-         item_title = str_replace_all(item_title, "Of", "of"),
-         item_title = str_replace_all(item_title, "For", "for"),
-         item_title = str_replace_all(item_title, "The", "the"),
-         item_title = str_replace_all(item_title, "My", "my"),
-         item_title = str_replace_all(item_title, "From", "from"),
-         item_title = str_replace_all(item_title, "Food/Home Garden", "Home Garden"),
-         item_title = str_replace_all(item_title, "Cooling Provides Shade",
-                                      "Cooling/Provides Shade"),
-         item_title = str_replace_all(item_title, "Protect/Shield my Home from Wildfire",
-                                      "Protect my Home from Wildfire")) %>%  # fixing some of the item titles
+  mutate(item_title = str_replace_all(item_title, "Private Recreation Physical Activity", "Private Recreation")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Of", "of")) %>% 
+  mutate(item_title = str_replace_all(item_title, "For", "for")) %>% 
+  mutate(item_title = str_replace_all(item_title, "The", "the")) %>% 
+  mutate(item_title = str_replace_all(item_title, "My", "my")) %>% 
+  mutate(item_title = str_replace_all(item_title, "From", "from")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Food/Home Garden", "Home Garden")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Cooling Provides Shade",
+                                      "Cooling/Shade")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Protect/Shield my Home from Wildfire",
+                                      "Wildfire Protection")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Food/Habitat for Wild Animals", 
+                                      "Wildlife")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Place for Socialization",
+                                      "Socializing")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Observing the Natural World",
+                                      "Observing Nature")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Soil Fertility Control",
+                                      "Soil Fertility")) %>% 
+  mutate(item_title = str_replace_all(item_title, "Commercial Agriculture",
+                                      "Agriculture")) %>% 
   filter(Item %in% c('commercial_agriculture', 'cooling_provides_shade', 'edible_wild_plants', 'erosion_control', 'food_or_habitat_for_wild_animals', 'food_or_home_garden', 'observing_the_natural_world', 'privacy', 'place_for_socialization', 'pollination', 'protect_or_shield_my_home_from_wildfire', 'religious_or_spiritual', 'soil_fertility_control')) %>% # selecting certain categories to include in figure
   mutate(cat_num = case_when(
     category %in% "provisioning" ~ 1, 
@@ -490,13 +552,12 @@ melted <- reshape::melt(es_likert_df) %>%
     category %in% "cultural" ~ 3, 
   ), 
   cat_num = as.numeric(cat_num))
-melted
 
 max_value_very_high <- melted %>% 
   filter(variable %in% c("Very High Importance")) %>% 
   group_by(item_title) %>% 
-  mutate(very_high_value = max(value)) %>% 
-  dplyr::select("item_title", "very_high_value")
+  summarise(very_high_value = max(value)) %>% 
+  select(item_title, very_high_value)
 
 melted <- merge(melted, max_value_very_high, by = c("item_title"))
 
@@ -533,13 +594,13 @@ cultural <-  melted %>%
   scale_fill_manual(values = c("#595D7C", "#797F91", "#ADB6B2", "#C17C79", "#D24D4B")) +
   #scale_fill_brewer(palette="BrBG")+
   theme(legend.position="none", 
-        axis.title.y = element_text(face = 'bold', size = 22, vjust = 4, hjust = 0.3),
+        axis.title.y = element_text(face = 'bold', size = 22, vjust = 3.3, hjust = 0.3),
         axis.text.y = element_text(size = 18),
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
         axis.ticks.x = element_blank(),
         #plot.title = element_text(face = 'bold', size = 16),
-        plot.margin = unit(c(.25, 0, .1, 0.2), "cm")
+        plot.margin = unit(c(.25, 0, .1, 0.5), "cm")
         )
 cultural
 
@@ -552,13 +613,13 @@ reg <-  melted %>%
   scale_fill_manual(values = c("#595D7C", "#797F91", "#ADB6B2", "#C17C79", "#D24D4B")) +
   #scale_fill_brewer(palette="BrBG")+
   theme(legend.position="none", 
-        axis.title.y = element_text(face = 'bold', size = 22, vjust = 1),
+        axis.title.y = element_text(face = 'bold', size = 22, vjust = 3.3),
         axis.text.y = element_text(size = 18),
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
         axis.ticks.x = element_blank(),
         #plot.title = element_text(face = 'bold', size = 16),
-        plot.margin = unit(c(0, 0, .1, .2), "cm")
+        plot.margin = unit(c(0, 0, .1, .5), "cm")
         )
 reg
 
@@ -572,12 +633,12 @@ prov <-  melted %>%
   scale_fill_manual(values = c("#595D7C", "#797F91", "#ADB6B2", "#C17C79", "#D24D4B")) +
   #scale_fill_brewer(palette="BrBG")+
   theme(legend.position="none", 
-        axis.title.y = element_text(face = 'bold', size = 22, vjust = 2.8),
+        axis.title.y = element_text(face = 'bold', size = 22, vjust = 3.3),
         axis.text.y = element_text(size = 18),
         axis.text.x = element_text(size = 18),
         axis.title.x = element_text(face = 'bold', size = 20),
         #plot.title = element_text(face = 'bold', size = 16),
-        plot.margin = unit(c(0, 0, .1, 0.2), "cm")
+        plot.margin = unit(c(0, 0, .1, 0.5), "cm")
         )
 prov
 
@@ -585,9 +646,9 @@ legend <- cowplot::get_legend(leg)
 #scale_x_discrete(limits=c("StronglyAgree", "Agree", "DontKnow","Disagree","StronglyDisagree"))
 
 survey_likert <- cowplot::plot_grid(cultural, reg, prov, legend, nrow = 4, align = "hv", axis = "lr", rel_heights = c(1, 1.2, 1.25, .25))
+plot_grid
 survey_likert
-
-#ggsave(here("figures", 'main_figures', 'survey_likert.jpg'), height = 8, width = 12) 
+ggsave(here("figures", 'main_figures', 'survey_likert.jpg'), height = 8, width = 12) 
 ```
 
 # Main Figure: Likert and Desirable Traits
