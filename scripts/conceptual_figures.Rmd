@@ -136,7 +136,7 @@ flam_EScores_subscores <- data.frame(
   flowers.pol = c(3.33, 2, 3.33, 2.8, 3.166, 2.8, 3.166, 3.33) # benefits of flowers to pollinators
 )  
 
-flam_EScores_subscores$ES.score <- (0.556*flam_EScores_subscores$drought + 0.222*flam_EScores_subscores$edible + 0.074*flam_EScores_subscores$flowers + 0.037*flam_EScores_subscores$fragrant + 0.111*flam_EScores_subscores$wildlife) / 5 # the following score was calculated based on the % of survey responses that highly rated a given desirable trait
+flam_EScores_subscores$ES.score <- (0.556*flam_EScores_subscores$drought + 0.222*flam_EScores_subscores$edible + 0.074*flam_EScores_subscores$flowers + 0.037*flam_EScores_subscores$fragrant + 0.111*flam_EScores_subscores$wildlife) # the following score was calculated based on the % of survey responses that highly rated a given desirable trait
 
 # scores DF
 flam_scores <- data.frame(
@@ -147,7 +147,7 @@ flam_scores <- data.frame(
 
 # scale flammability and desirability scores
 flam_scores <- flam_scores %>% 
-  mutate(flam.score = scale(flam.score), es.score = scale(es.score))
+  mutate(flam.score = scale(flam.score), scaled.es.score = scale(es.score))
 ```
 
 ## Visualization
@@ -160,7 +160,7 @@ flam_scores$labx <- c(0.06, -0.31, -1.4, -2.08, 0.32, 0.38, 0.73, 0.57)
 flam_scores$laby <- c(0.02, -0.4, 1.38, -1.32, -0.65, -0.33, 0.13, 1.8)
 
 es.vs.flam <- ggplot(data=flam_scores) +
-  geom_point(aes(x=es.score, y=flam.score, color=species), size=12, alpha=0.75) + 
+  geom_point(aes(x=scaled.es.score, y=flam.score, color=species), size=12, alpha=0.75) + 
   geom_text(vjust=0, hjust=-0.15, aes(x=labx, y=laby, label=species), fontface = 'bold', size = 12) +
   annotate(geom = 'segment', x = -1.5, xend = 1, y = -2, yend = -2, linewidth = 2,
            arrow = arrow(ends = 'both', angle = 20), color = 'gray60') + # desirability score arrow
@@ -188,10 +188,41 @@ es.vs.flam <- ggplot(data=flam_scores) +
 es.vs.flam
 ```
 
+## Updating Visualization
+```{r}
+# Visualization
+# 'ARTCAL', 'ARCDEN', 'CEAGRI', 'ERIKAR', 'HETARB', 'MALLAU', 'SALAPI', 'SALLEU'
+flam_scores$laby_updated <- c(0.12, -0.62, 1.38, -1.32, -0.65, -0.36, -0.18, 1.8)
+flam_scores$labx_updated <- c(3.12, 2.41, 2.55, 2.47, 3.12, 3.15, 2.56, 2.85)
+
+es.vs.flam <- ggplot(data=flam_scores) +
+  geom_point(aes(x=es.score, y=flam.score, color=species), size=12, alpha=0.75) + 
+  geom_text(vjust=0, hjust=-0.15, aes(x=labx_updated, y=laby_updated, label=species), fontface = 'bold', size = 12) +
+  annotate(geom = 'segment', x = 1.1, xend = 1.1, y = -1.65, yend = 1.65, linewidth = 2,
+           arrow = arrow(ends = 'both', angle = 20), color = 'gray60') + # flammability score arrow
+  annotate('text', x = 1.1, y = 1.93, label = 'More \nFlammable', size = 9,
+           fontface = 'bold', color = 'gray60') +
+  annotate('text', x = 1.1, y = -1.93, label = 'Less \nFlammable', size = 9,
+           fontface = 'bold', color = 'gray60') +
+  labs(x = 'Desirable Traits Score', y = 'Flammability Score') +
+  scale_color_manual(values = c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')) +
+  theme_bw() +
+  scale_y_continuous(limits = c(-2, 2)) +
+  scale_x_continuous(limits = c(1, 4)) +
+  theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 36),
+          #axis.text.y = element_blank(),
+          axis.ticks = element_blank(),
+          panel.grid = element_blank(),
+          axis.text = element_text(size = 22))
+es.vs.flam
+```
+
+
 # Main Figure
 Arranging Fire Triangles and Scores Scatterplot and Saving
 ```{r}
-plot_grid(es.vs.flam, flam.triangles, labels = c('a', 'b'), nrow = 1, rel_widths = c(3, 2), label_size = 50, greedy = F)
+plot_grid(es.vs.flam, flam.triangles, labels = c('a', 'b'), nrow = 1, rel_widths = c(2.5, 2), label_size = 50, greedy = F)
 ggsave(file = here('figures', 'main_figures', 'Fig7_conceptual_plot.png'), height = 10, width = 25)
 ```
 
