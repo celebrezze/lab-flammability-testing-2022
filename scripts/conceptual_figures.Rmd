@@ -198,12 +198,12 @@ flam_scores$labx_updated <- c(3.12, 2.41, 2.55, 2.47, 3.12, 3.15, 2.56, 2.85)
 es.vs.flam <- ggplot(data=flam_scores) +
   geom_point(aes(x=es.score, y=flam.score, color=species), size=12, alpha=0.75) + 
   geom_text(vjust=0, hjust=-0.15, aes(x=labx_updated, y=laby_updated, label=species), fontface = 'bold', size = 12) +
-  annotate(geom = 'segment', x = 1.1, xend = 1.1, y = -1.65, yend = 1.65, linewidth = 2,
-           arrow = arrow(ends = 'both', angle = 20), color = 'gray60') + # flammability score arrow
-  annotate('text', x = 1.1, y = 1.93, label = 'More \nFlammable', size = 9,
-           fontface = 'bold', color = 'gray60') +
-  annotate('text', x = 1.1, y = -1.93, label = 'Less \nFlammable', size = 9,
-           fontface = 'bold', color = 'gray60') +
+  #annotate(geom = 'segment', x = 1.1, xend = 1.1, y = -1.65, yend = 1.65, linewidth = 2,
+  #         arrow = arrow(ends = 'both', angle = 20), color = 'gray60') + # flammability score arrow
+  #annotate('text', x = 1.1, y = 1.93, label = 'More \nFlammable', size = 9,
+  #         fontface = 'bold', color = 'gray60') +
+  #annotate('text', x = 1.1, y = -1.93, label = 'Less \nFlammable', size = 9,
+  #         fontface = 'bold', color = 'gray60') +
   labs(x = 'Desirable Traits Score', y = 'Flammability Score') +
   scale_color_manual(values = c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')) +
   theme_bw() +
