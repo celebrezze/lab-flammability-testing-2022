@@ -43,14 +43,14 @@ r.flamm.index.top <- r.flam.index.top %>% # so that minimum possible value is 0,
   dplyr::select(species, ignitability, combustibility, sustainability) %>% 
   ungroup() %>% 
   mutate(flam.score = (ignitability + combustibility + sustainability)/ 3) %>% 
-  mutate(species = case_when(species == 'ARCDEN' ~ 'Ar. densiflora',
-                             species == 'CEAGRI' ~ 'Ce. griseus',
-                             species == 'ARTCAL' ~ 'Ar. californica',
-                             species == 'ERIKAR' ~ 'Er. karvinskianus',
-                             species == 'HETARB' ~ 'He. arbutifolia',
-                             species == 'MALLAU' ~ 'Ma. laurina',
-                             species == 'SALAPI' ~ 'Sa. apiana',
-                             species == 'SALLEU' ~ 'Sa. leucophylla'))
+  mutate(species = case_when(species == 'ARCDEN' ~ 'A. densiflora',
+                             species == 'CEAGRI' ~ 'C. griseus',
+                             species == 'ARTCAL' ~ 'A. californica',
+                             species == 'ERIKAR' ~ 'E. karvinskianus',
+                             species == 'HETARB' ~ 'H. arbutifolia',
+                             species == 'MALLAU' ~ 'M. laurina',
+                             species == 'SALAPI' ~ 'S. apiana',
+                             species == 'SALLEU' ~ 'S. leucophylla'))
 
 # color
 r.flamm.index.top$color <- c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')

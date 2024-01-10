@@ -680,12 +680,12 @@ mem.df$r_fh <- remef(fh_mod, fix = c('sample_wt', 'lfm', 'lfm:sample_wt'), ran =
 
 # With REMEF
 fh.branching.remef <- mem.df %>% 
-  mutate(species = case_when(species == 'ARTCAL' ~ "Ar. californica",
-                             species == 'ERIKAR' ~ "Er. karvinskianus",
-                             species == 'SALAPI' ~ "Sa. apiana",
-                             species == 'SALLEU' ~ "Sa. leucophylla",
-                             species == 'CEAGRI' ~ "Ce. griseus",
-                             species == 'MALLAU' ~ "Ma. laurina")) %>% 
+  mutate(species = case_when(species == 'ARTCAL' ~ "A. californica",
+                             species == 'ERIKAR' ~ "E. karvinskianus",
+                             species == 'SALAPI' ~ "S. apiana",
+                             species == 'SALLEU' ~ "S. leucophylla",
+                             species == 'CEAGRI' ~ "C. griseus",
+                             species == 'MALLAU' ~ "M. laurina")) %>% 
   ggplot(aes(x = branching, y = r_fh))  +
   geom_point(aes(color = species), alpha = 0.8) +
   geom_smooth(method = 'lm', color = 'gray40') +
@@ -847,8 +847,8 @@ mem.df$r_fd <- remef(fd_mod, fix = c('sample_wt', 'speciesCEAGRI', 'speciesERIKA
 fd.dmc.remef <- ggplot(mem.df, aes(x = dmc, y = r_fd))  +
   geom_point(aes(color = species), alpha = 0.8) +
   geom_smooth(method = 'lm', color = 'gray40') +
-  stat_cor(label.y = 3.95)+ 
-  stat_regline_equation(label.y = 4.55) +
+  stat_cor(label.y = 4.55)+ 
+  stat_regline_equation(label.y = 5.45) +
   labs(x = 'Dry Matter Content (scaled)', y = 'Flame Duration', color = 'Species') +
   theme_bw() +
   scale_y_continuous(breaks = c(0, 2.5, 5)) +
@@ -893,8 +893,8 @@ mem.df$r_fd <- remef(fd_mod, fix = c('speciesCEAGRI', 'speciesERIKAR', 'speciesM
 fd.dmc.remef <- ggplot(mem.df, aes(x = dmc, y = r_fd))  +
   geom_point(aes(color = species), alpha = 0.8) +
   geom_smooth(method = 'lm', color = 'gray40') +
-  stat_cor(label.y = 3.95)+ 
-  stat_regline_equation(label.y = 4.55) +
+  stat_cor(label.y = 4.55)+ 
+  stat_regline_equation(label.y = 5.3) +
   labs(x = 'Dry Matter Content (scaled)', y = 'Flame Duration', color = 'Species') +
   theme_bw() +
   scale_y_continuous(breaks = c(0, 2.5, 5)) +
@@ -1013,8 +1013,8 @@ mem.df$r_hf <- remef(hf_mod, fix = c('speciesCEAGRI', 'speciesERIKAR', 'speciesM
 hf.lmr.remef <- ggplot(mem.df, aes(x = leaf_mass_ratio, y = r_hf))  +
   geom_point(aes(color = species), alpha = 0.8) +
   geom_smooth(method = 'lm', color = 'gray40') +
-  stat_cor(label.y = 1.96)+ 
-  stat_regline_equation(label.y = 2.65) +
+  stat_cor(label.y = 1.8)+ 
+  stat_regline_equation(label.y = 2.3) +
   labs(x = 'Leaf Mass Ratio (scaled)', y = 'Heat Flux Change', color = 'Species') +
   theme_bw() +
   scale_color_manual(values = c("#ED0000B2", "#42B540B2", "#0099B4B2", "#AD002AB2", "#ADB6B6B2", "#1B1919B2")) +
