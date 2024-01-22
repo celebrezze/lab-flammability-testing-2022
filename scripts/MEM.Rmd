@@ -1648,19 +1648,19 @@ woo <- data.frame(predictors, flam_metrics, coef, p.val) %>%
   filter(predictors != c('leaf_dmc', 'stem_dmc', 'mpa', 'leaf_mass_ratio', 'dw_spp_dev')) %>% 
   mutate(predictors = case_when(
     predictors == 'lfm' ~ 'Live Fuel\n Moisture',
-    predictors == 'sample_wt' ~ 'Sample Weight',
+    predictors == 'sample_wt' ~ 'Sample Mass',
     predictors == 'branching' ~ 'Branching',
     predictors == 'start_temp' ~ 'Starting\n Temperature',
     predictors == 'dmc' ~ 'Dry Matter\n Content',
     predictors == 'species' ~ 'Species',
     predictors == 'leaf_mass_ratio' ~ 'Leaf Mass\n Ratio',
-    predictors == 'dmc:sample_wt' ~ 'DMC x\nSample Weight',
-    predictors == 'lfm:sample_wt' ~ 'LFM x\nSample Weight',
-    predictors == 'leaf_mass_ratio:sample_wt' ~ 'Leaf Mass Ratio x\nSample Weight',
-    predictors == 'start_temp:sample_wt' ~ 'Starting Temp x\nSample Weight'
+    predictors == 'dmc:sample_wt' ~ 'DMC x\nSample Mass',
+    predictors == 'lfm:sample_wt' ~ 'LFM x\nSample Mass',
+    predictors == 'leaf_mass_ratio:sample_wt' ~ 'Leaf Mass Ratio x\nSample Mass',
+    predictors == 'start_temp:sample_wt' ~ 'Starting Temp x\nSample Mass'
   )) %>% 
   mutate(predictors = as.factor(predictors)) %>% 
-  mutate(predictors = fct_relevel(predictors, c('Sample Weight', 'Branching', 'Species', 'Starting\n Temperature', 'Dry Matter\n Content', 'Live Fuel\n Moisture', 'Leaf Mass\n Ratio', 'DMC x\nSample Weight', 'LFM x\nSample Weight', 'Leaf Mass Ratio x\nSample Weight', 'Starting Temp x\nSample Weight'))) %>% 
+  mutate(predictors = fct_relevel(predictors, c('Sample Mass', 'Branching', 'Species', 'Starting\n Temperature', 'Dry Matter\n Content', 'Live Fuel\n Moisture', 'Leaf Mass\n Ratio', 'DMC x\nSample Mass', 'LFM x\nSample Mass', 'Leaf Mass Ratio x\nSample Mass', 'Starting Temp x\nSample Mass'))) %>% 
   mutate(flam_metrics = as.factor(flam_metrics)) %>% 
   mutate(flam_metrics = fct_relevel(flam_metrics, c('Flame\nDuration', 'Heat Flux\nChange', 'Temperature\nChange', 'Flame\nHeight'))) %>% 
   mutate(col_pred = ifelse(predictors == 'Species' & flam_metrics %in% c('Heat Flux\nChange', 'Flame\nDuration'), 'gray20', 'white'))
