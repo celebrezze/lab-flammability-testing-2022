@@ -495,13 +495,17 @@ flam.df <- flam.df %>%
   mutate(branch_width = as.numeric(branch_width)) %>% 
   dplyr::rename(sample_wt = total_branch_mass) %>% 
   select(-X, -input_by, -potted, -Species) %>%  # removing unneccessary columns
-  mutate(species = ifelse(species == 'MANDEN', 'ARCDEN', species)) %>% 
-  filter(!is.na(heat_flux_change)) # removing outlier in heat flux change
+  mutate(species = ifelse(species == 'MANDEN', 'ARCDEN', species))
+
+write_csv(flam.df, here('data', 'processed-data', 'all_flamm_data.csv'))
 ```
 
 # Saving .csv
 ```{r}
-summary(flam.df)
+flam.df.final <- flam.df %>% 
+  filter(!is.na(heat_flux_change)) # removing outlier in heat flux change, and removing all nonignitions
 
-write_csv(flam.df, here('data', 'processed-data', 'clean_flamm_data.csv'))
+summary(flam.df.final)
+
+write_csv(flam.df.final, here('data', 'processed-data', 'clean_flamm_data.csv'))
 ```

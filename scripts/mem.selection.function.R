@@ -75,3 +75,59 @@ mem.selection.table <- function(df, mod.list, output){
     save_kable(here('figures', 'MEM', output))
   return(kable.df)
 }
+
+# GENERALIZED LINEAR MIXED EFFECTS MODEL SELECTION
+
+glmm.selection <- function(y.var, predictors, df, mod.family, zero.inflation, rem.str = '(1|plant_id)'){
+  # FIRST: List models
+  # empty list
+  mod.list <- list()
+  call.vec <- c()
+  
+  # setting up a nested for loop to list all possible models including those predictors
+  for(i in 2:ncol(predictors)){
+    call <- colnames(predictors) %>%
+      combinations(n = ncol(predictors), r = i, repeats.allowed = F) %>% 
+      apply(1, paste0, collapse = ' + ') # all possible combinations of models from 2 - # of predictors we're interested in (note: cannot include only 1 predictor, as this breaks multicollinearity for loop below; also, we're probably not interested in a model with only one explanatory variable)
+    for(j in (1+length(call.vec)):(length(call)+length(call.vec))){ # adding linear mixed effects model to mod.list
+      mod.list[[j]] <- glmmTMB(as.formula(paste(y.var, '~', call[j-length(call.vec)], '+', rem.str, sep = '')), data = df, family = mod.family, ziformula = as.formula(paste0('~', zero.inflation, sep = '')))
+    }
+    call.vec <- append(call.vec, call) # to index where to put model into model list
+  }
+  
+  # CREATE DATAFRAME
+  model.df <- data.frame(model.id = c(1:length(mod.list)),
+                         call = c(rep(NA, length(mod.list))),
+                         multicollinearity = c(rep(NA, length(mod.list))),
+                         AIC = c(rep(NA, length(mod.list))),
+                         BIC = c(rep(NA, length(mod.list))),
+                         R2_marg = c(rep(NA, length(mod.list))),
+                         R2_cond = c(rep(NA, length(mod.list))))
+  
+  # SECOND: FLAG ANY MODELS THAT BREAK MULTICOLINEARITY ASSUMPTIONS
+  for(i in 1:length(mod.list)){
+    vif.df <- multicollinearity(mod.list[[i]])
+    ifelse(max(vif.df$VIF) > 5, model.df$multicollinearity[i] <- 'yes', 
+           model.df$multicollinearity[i] <- 'no')
+  }
+  
+  for(i in 1:length(mod.list)){
+    if(model.df$multicollinearity[i] == 'yes'){
+      mod.list[[i]] <- NA
+    }}
+  
+  # THIRD: CALCULATE AIC, BIC, MALLOWS CP
+  for(i in 1:length(mod.list)) {
+    if(model.df$multicollinearity[i] == 'yes')
+    {model.df[i, 3:6] <- NA}
+    else{
+      model.df$call[i] <- paste0(mod.list[[i]]$call$formula)[3]
+      model.df$AIC[i] <- AIC(mod.list[[i]])
+      model.df$BIC[i] <- BIC(mod.list[[i]])
+      model.df$R2_marg[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_marginal)
+      model.df$R2_cond[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_conditional)
+    }
+  }
+  output <- list(model.df, mod.list)
+  return(output)
+}

@@ -1,0 +1,150 @@
+---
+title: "Ignitions"
+author: "Joe Celebrezze"
+date: "2024-01-27"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(here)
+here = here::here
+source(here("scripts", "source_code.R"))
+
+source(here('scripts', 'mem.selection.function.R')) #this is where mem.selection(), mem.selection.table() and mallows.cp() functions are stored
+
+flamm.df <- read.csv(here('data', 'processed-data', 'all_data.csv'))
+```
+
+# Data Wrangling
+Basically, copying the mem.df from MEM.Rmd
+```{r}
+mem.df <- flamm.df %>% 
+  unite('plant_id', c(species, plant), sep = '_', remove = F) %>% 
+  select(species, thickness, lfm, leaf_area, LMA, sample_wt, leaf_mass_ratio, branching, mpa,
+         ignition, fh, fd, temp_change, heat_flux_change, prop_ig, dw_flam_sample,
+         ww_flam_sample, sample_density, branch_volume, start_temp, leaf_area, branch_height,
+         stem_dmc, leaf_dmc, dmc, stem_sav, leaf_sav, dw_sppdev, plant_id) %>% 
+  mutate(lfm = scale(lfm), mpa = scale(mpa), ww_flam_sample = scale(ww_flam_sample),
+         dw_flam_sample = scale(dw_flam_sample), sample_density = scale(sample_density),
+         LMA = scale(LMA), thickness = scale(thickness),
+         leaf_area = scale(leaf_area), branching = scale(branching),
+         leaf_mass_ratio = scale(leaf_mass_ratio), sample_wt = scale(sample_wt),
+         start_temp = scale(start_temp), branch_volume = scale(branch_volume),
+         fh = scale(fh), fd = scale(fd),
+         temp_change = scale(temp_change), heat_flux_change = scale(heat_flux_change),
+         leaf_area = scale(leaf_area), branch_height = scale(branch_height),
+         stem_dmc = scale(stem_dmc), leaf_dmc = scale(leaf_dmc), dmc = scale(dmc),
+         stem_sav = scale(stem_sav), leaf_sav= scale(leaf_sav), dw_sppdev= scale(dw_sppdev)) %>% 
+  mutate(ignition_binary = as.numeric(ifelse(ignition == 'M', 0, ignition))) %>% 
+  drop_na(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_area, leaf_sav, thickness, species)
+
+mem.rf.df <- mem.df %>% 
+  select(ignition_binary, lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness, species)
+
+mem.predictors.df <- mem.df %>% 
+  select(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness, species) # fourteen predictors (note: no ww or dw); removed  thickness, leaf_area, sample_density, branch_volume, and branch_height from initial consideration as more than 14 predictors starts to make the model selection process take a really long time or cause the R session to abort
+```
+
+# Interspecific Differences
+Using binomial mixed effects model w/ species as only fixed effect
+```{r}
+ig.spp.mem <- lmer(ignition_binary ~ species + (1|plant_id), data = mem.df)
+summary(ig.spp.mem)
+anova(ig.spp.mem)
+# tukey-kramer test adjusted for MEM
+ig.spp.tukey <- emmeans(ig.spp.mem, pairwise ~ species, adjust = 'tukey')
+ig.spp.tukey.df <- summary(ig.spp.tukey$contrasts)
+```
+
+```{r}
+ig.spp.binomial <- glmer(ignition_binary ~ species + (1|plant_id), family = binomial, data = mem.df)
+summary(ig.spp.binomial)
+anova(ig.spp.binomial)
+# tukey-kramer test adjusted for MEM
+ig.spp.bin.tukey <- emmeans(ig.spp.binomial, pairwise ~ species, adjust = 'tukey')
+# ig.spp.bin.tukey.df <- summary(ig.spp.binomial$contrasts) # returns error...
+```
+
+
+# Model Selection
+```{r}
+ig.mem.selection <- mem.selection('ignition_binary', mem.predictors.df, mem.df)
+ig.model.df <- ig.mem.selection[[1]] %>% 
+  mutate(ABIC = AIC + BIC)
+ig.mod.list <- ig.mem.selection[[2]]
+ig.top.mem <- mem.selection.table(ig.model.df, ig.mod.list, 'Ignitions_MEM.html') %>% 
+  mutate(flam.var = 'ignition_binary')
+```
+
+# Regressions
+```{r}
+mem.df %>% 
+  pivot_longer(cols = c('leaf_sav', 'stem_sav', 'LMA'), names_to = 'predictor', values_to = 'value') %>% 
+  ggplot(aes(x = value, y = ignition_binary, color = species)) +
+    geom_point() +
+    geom_smooth(method = 'binomial') +
+    facet_wrap(~predictor) +
+    theme_bw()
+```
+
+# Random Forest Model
+## Basic
+```{r}
+library(ranger)
+
+ig.rf <- ranger(ignition_binary ~ ., data = mem.rf.df, importance = 'impurity')
+
+ig.rf.varimp <- as.data.frame(ig.rf$variable.importance)
+ig.rf.varimp$variable <- rownames(ig.rf.varimp)
+ig.rf.varimp <- ig.rf.varimp %>% 
+  rename(varimp = `ig.rf$variable.importance`)
+ig.rf.varimp$variable <- reorder(ig.rf.varimp$variable, desc(ig.rf.varimp$varimp), FUN = mean)
+
+ig.rf.varimp %>% 
+  ggplot() +
+    geom_linerange(aes(x = variable, ymax = varimp, ymin = 0), linewidth = 10) +
+    labs(x = 'Variable', y = 'Variable Importance') +
+    theme_bw() +
+    theme(axis.title = element_text(face = 'bold', size = 16),
+        axis.text = element_text(size = 13))
+
+# Predictions
+## Mean values for predictors
+spp.means <- mem.df %>% 
+  group_by(species) %>% 
+  summarise(lfm = mean(lfm), LMA = mean(LMA), sample_wt = mean(sample_wt), leaf_mass_ratio = mean(leaf_mass_ratio), branching = mean(branching), mpa = mean(mpa), start_temp = mean(start_temp), dmc = mean(dmc), branch_volume = mean(branch_volume), stem_sav = mean(stem_sav), leaf_sav = mean(leaf_sav), thickness = mean(thickness))
+
+spp.means$predicted_ig <- predict(ig.rf, data = spp.means)$predictions
+
+## All predictors = 0, only using species to predict
+spp.only <- mem.df %>% 
+  group_by(species) %>% 
+  tally() %>% 
+  mutate(lfm = 0, LMA = 0, sample_wt = 0, leaf_mass_ratio = 0, branching = 0, mpa = 0, start_temp = 0, dmc = 0, branch_volume = 0, stem_sav = 0, leaf_sav = 0, thickness = 0)
+
+spp.only$predicted_ig <- predict(ig.rf, data = spp.only)$predictions
+```
+
+## Probability
+```{r}
+ig.prob.rf <- ranger(ignition_binary ~ ., data = mem.rf.df, probability = T, importance = 'impurity')
+
+# Variable importance
+ig.rf.varimp <- as.data.frame(ig.prob.rf$variable.importance)
+ig.rf.varimp$variable <- rownames(ig.rf.varimp)
+ig.rf.varimp <- ig.rf.varimp %>% 
+  rename(varimp = `ig.prob.rf$variable.importance`)
+ig.rf.varimp$variable <- reorder(ig.rf.varimp$variable, desc(ig.rf.varimp$varimp), FUN = mean)
+
+ig.rf.varimp %>% 
+  ggplot() +
+    geom_linerange(aes(x = variable, ymax = varimp, ymin = 0), linewidth = 10) +
+    labs(x = 'Variable', y = 'Variable Importance') +
+    theme_bw() +
+    theme(axis.title = element_text(face = 'bold', size = 16),
+        axis.text = element_text(size = 13))
+```
+

@@ -34,6 +34,7 @@ library(glmnet) # 'best' package for running lasso on generalized linear models;
 #library(HH)
 library(devtools)
 library(likert) # for likert scale
+library(glmmTMB) # for generalized linear mixed models
 #library(hrbrthemes)
 
 

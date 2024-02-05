@@ -55,17 +55,6 @@ stem_data <- read_csv(here('data', 'raw-data', 'plant-traits', 'stem_data_flamm.
 glimpse(stem_data)
 ```
 
-## VOC Data
-```{r}
-voc_data <- read_csv(here('data', 'raw-data', 'plant-traits', 'VOCs_JL.csv')) %>%
-  clean_names() %>% 
-  filter(species != 'Arctostaphylos densifolia', # Not interested in species we didn't burn
-         method %in% c('Control', 'Heated'), # Only interested in these two methods
-         treatment == 'WET')  %>%  # Only interested in wet treatment (since we didn't do droughted for the flammability testing)
-  select(-treatment) # Since we discarded droughted treatment, we don't really need that column anymore
-```
-
-
 # Calculating LFM
 First, getting cup weights data
 ```{r}
@@ -128,26 +117,6 @@ stem_data <- stem_data %>%
   mutate(stem_sav = stem_sa/stem_vol)
 ```
 
-## VOC Data
-We're interested in the area under the curve of the VOCs over time plot. To calculate this, I used the function below to approximate the area under the curve using the trapezoidal rule:
-```{r}
-voc_data <- voc_data %>% 
-  mutate(species = case_when(
-    species == "Iris douglasiana" ~ "IRIDOU",
-    species == "Erigeron karvinskianus" ~ "ERIKAR",
-    species == "Salvia apiana" ~ "SALAPI",
-    species == "Salvia leucophylla" ~ "SALLEU",
-    species == "Artemesia californica" ~ "ARTCAL",
-    species == "Ceanothus griseus" ~ "CEAGRI",
-    species == "Malosma laurina" ~ "MALLAU",
-    species == "Heteromeles arbutifolia" ~ "HETARB"
-  )) %>% 
-  group_by(leaf_mass) %>% 
-  summarise(species = species, method = method,
-         auc_voc = area_under_curve(time, voc), # Area under curve
-         avg_voc = sum(voc)/10) # to get voc per minute average
-```
-
 ## Averaging Traits
 Averaging traits of interest so that there is one value per plant
 ```{r}
@@ -162,10 +131,6 @@ leaf_data_avgs <- leaf_data %>%
 leaf_area_avgs <- leaf_area %>% 
   group_by(species, plant) %>% 
   summarise(leaf_area = mean(area_cm2))
-
-voc_data_avgs <- voc_data %>% 
-  group_by(species) %>% 
-  summarise(auc_voc = mean(auc_voc), avg_voc = mean(avg_voc), norm_avg_voc = mean(avg_voc)/mean(leaf_mass), norm_auc_voc = mean(auc_voc)/mean(leaf_mass))
 ```
 
 ## Combining Traits Data
@@ -281,18 +246,6 @@ main_traits_df <- main_traits_df %>%
   mutate(leaf_sav = ifelse(leaf_area > 99999, 999999, (2*leaf_area)/(thickness*leaf_area)))
 ```
 
-### VOCs
-```{r}
-# Adding NA values for species we don't have VOC data for (MANDEN, QUEAGR, EUCGLO)
-species <- c('MANDEN', 'QUEAGR', 'EUGL')
-na <- c(rep(999999, 3)) # so that IRIDOU data does not get lost in the merge
-voc_data_avgs_nas <- data.frame(species, na, na, na, na)
-colnames(voc_data_avgs_nas) <- colnames(voc_data_avgs)
-voc_data_avgs <- rbind(voc_data_avgs, voc_data_avgs_nas)
-
-main_traits_df <- merge(main_traits_df, voc_data_avgs, by = 'species')
-```
-
 - Dealing with NAs from above (HETARB, IRIDOU)
 ```{r}
 main_traits_df <- main_traits_df %>% 
@@ -301,10 +254,6 @@ main_traits_df <- main_traits_df %>%
   mutate(stem_wet_mass = ifelse(stem_wet_mass > 99999, NA, stem_wet_mass)) %>% 
   mutate(stem_dry_mass = ifelse(stem_dry_mass > 99999, NA, stem_dry_mass)) %>% 
   mutate(leaf_area = ifelse(leaf_area > 99999, NA, leaf_area)) %>% 
-  mutate(auc_voc = ifelse(auc_voc == 999999, NA, auc_voc)) %>% 
-  mutate(avg_voc = ifelse(avg_voc == 999999, NA, avg_voc)) %>% 
-  mutate(norm_auc_voc = ifelse(norm_auc_voc == 999999, NA, norm_auc_voc)) %>% 
-  mutate(norm_avg_voc = ifelse(norm_avg_voc == 999999, NA, norm_avg_voc)) %>% 
   mutate(stem_dmc = ifelse(stem_dmc == 999999, NA, stem_dmc)) %>% 
   mutate(stem_sav = ifelse(stem_dmc == 999999, NA, stem_sav)) %>% 
   mutate(leaf_sav = ifelse(leaf_sav == 999999, NA, leaf_sav))
@@ -414,7 +363,7 @@ main_traits_df <- main_traits_df %>%
 
 # Combining with Flam. Dataset
 ```{r}
-flam.df <- read.csv(here('data', 'processed-data', 'clean_flamm_data.csv')) %>% 
+flam.df <- read.csv(here('data', 'processed-data', 'all_flamm_data.csv')) %>% 
   select(-date)
 
 main_df <- merge(main_traits_df, flam.df, by = c('species', 'plant'))
@@ -507,12 +456,17 @@ main_df <- main_df %>%
 # Removing IRIDOU
 We decided to remove IRIDOU from consideration pretty late on, so it is removed here rather than earlier on in the data wrangling pipeline
 ```{r}
+main_all_df <- main_df
+
 main_df <- main_df %>% 
-  filter(species != 'IRIDOU')
+  filter(species != 'IRIDOU') %>% 
+  filter(ignition != 0)
 ```
 
 # Writing csv
 ```{r}
+write.csv(main_all_df, here('data', 'processed-data', 'all_data.csv'))
+
 summary(main_traits_df)
 write.csv(main_traits_df, here('data', 'processed-data', 'plant_traits_data.csv'))
 

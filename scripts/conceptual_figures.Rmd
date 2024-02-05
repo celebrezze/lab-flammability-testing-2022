@@ -219,6 +219,15 @@ es.vs.flam <- ggplot(data=flam_scores) +
 es.vs.flam
 ```
 
+### Stats
+```{r}
+# linear regression
+desireflam.lm <- lm(flam.score ~ es.score, data = flam_scores)
+summary(desireflam.lm)
+
+```
+
+
 ## Adding Defensible Space Zones
 ```{r}
 es.vs.flam.zones <- ggplot(data=flam_scores) +

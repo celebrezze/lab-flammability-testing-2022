@@ -719,13 +719,14 @@ ggsave(here('figures', 'MEM', 'REMEF', 'branching.vs.fh.spp.png'), width = 8, he
 Graphical Abstract Version:
 ```{r}
 ggplot(mem.df, aes(x = branching, y = r_fh))  +
-  geom_point(alpha = 0.8) +
-  geom_smooth(method = 'lm', color = 'gray40') +
+  geom_point(alpha = 0.5, color = 'gray30', size = 5.5) +
+  geom_smooth(method = 'lm', color = 'black', se = F, linewidth = 4.5) +
   labs(x = 'Branching', y = 'Flame Height') +
   theme_bw() +
-  theme(axis.title = element_text(face = 'bold', size = 20),
-        axis.text = element_text(size = 16),
-        legend.title = element_text(face = 'bold', size = 20))
+  theme(axis.title = element_text(face = 'bold', size = 48),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+ggsave(here('figures', 'MEM', 'REMEF', 'graphical.abstract.png'), width = 8, height = 8)
 ```
 
 Sample Weight:
@@ -1669,11 +1670,14 @@ woo %>%
 ggplot(aes(x = predictors, y = flam_metrics, fill = coef)) +
   geom_tile(aes(x = predictors, y = flam_metrics, fill = coef)) +
   geom_text(aes(x = predictors, y = flam_metrics, label = p.val), color = 'white', fontface = 'bold', size = 8) +
-  labs(x = 'Predictors', y = 'Flam. Metrics', fill = 'Coefficient\n') +
-  scale_fill_gradient2(low = 'darkred', mid = "gray80", high = 'darkblue', midpoint = 0, na.value = woo$col_pred, limits = c(-0.85, 0.85)) +
-  geom_vline(xintercept = 7.5, size = 0.35, linetype = 'dashed') +
-  geom_hline(yintercept = c(0.5, 1.5, 2.5, 3.5, 4.5), size = 0.1, color = 'gray80') +
-  geom_vline(xintercept = c(0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5), size = 0.1, color = 'gray80') +
+  labs(x = 'Predictors', y = 'Flam. Metrics',
+       fill = '\u03b2 Coefficient') +
+  scale_fill_gradient2(low = 'darkred', mid = "gray80", high = 'darkblue', midpoint = 0, na.value = woo$col_pred, limits = c(-0.85, 0.85), breaks = c(-0.8, -0.4, 0, 0.4, 0.8)) +
+  geom_vline(xintercept = 7.5, size = 0.4, color = 'gray35', linetype = 'dashed') +
+  geom_hline(yintercept = c(0.5, 1.5, 2.5, 3.5, 4.5), size = 0.75, color = 'gray35') +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5), size = 0.2, color = 'gray60') +
+  geom_hline(yintercept = c(0.5, 4.5), size = 0.8, color = 'black') +
+  geom_vline(xintercept = c(0.5,  11.5), size = 0.8, color = 'black') +
   guides(fill = guide_colorbar(barwidth = 1.5, barheight = 20)) +
   #theme_bw() +
   theme(legend.position = 'right',
@@ -1684,7 +1688,7 @@ ggplot(aes(x = predictors, y = flam_metrics, fill = coef)) +
         axis.text.y = element_text(size = 23, face = 'bold'),
         legend.title = element_text(face = 'bold', size = 22),
         legend.text = element_text(face = 'bold', size = 18),
-        panel.background = element_rect(fill='white', colour='black'), # Make background white and border black
+        panel.background = element_rect(fill='white', colour='white'), # Make background white and border black
         panel.grid.major = element_blank(),  # Hide major gridlines
         panel.grid.minor = element_blank())
 ggsave(here('figures', 'MEM', 'main.mem.results.png'), height = 8, width = 17)

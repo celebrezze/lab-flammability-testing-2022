@@ -36,6 +36,20 @@ flamm.df %>%
                    temp_change = mean(temp_change), heat_flux_change = mean(heat_flux_change))
 ```
 
+```{r}
+flamo.df <- read.csv(here('data', 'processed-data', 'all_flamm_data.csv')) %>% 
+  filter(species != 'IRIDOU')
+
+prop.ig.df <- flamo.df %>% 
+  select(species, ignition) %>% 
+  mutate(ignition = ifelse(ignition == 1, 'ignited', 'non-ignited'))
+
+table(prop.ig.df$species, prop.ig.df$ignition)
+chisq.test(prop.ig.df2$species, prop.ig.df2$ignition)
+
+rm(flamo.df, prop.ig.df)
+```
+
 
 Although the mixed effects model selection tells us a lot about our data and provides useful insights, it doesn't include all of the variables and it leaves some of our question unanswered:
 
@@ -345,6 +359,9 @@ lfm.boxplot
 
 Dotplot
 ```{r}
+lfm.aov <- aov(lfm ~ species, data = flamm.dotplot.df1)
+TukeyHSD(lfm.aov)
+
 lfm.dotplot <- flamm.dotplot.df2 %>%
   mutate(Species = fct_relevel(Species, c('H. arb.', 'M. lau.', 'C. gri.', 'S. api.', 'S. leu.', 'A. den.', 'A. cal.', 'E. kar.'))) %>% 
   ggplot(aes(x = Species, color = Species)) +
