@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ESRI_ItemInformation Culture='en-US'>
+<name>218e54cf56f94342a46fefcf05c64f9a</name>
+<guid>7DAE7ADB-1E3C-4797-A6C9-DA9B241EF510</guid>
+<catalogpath></catalogpath>
+<snippet></snippet>
+<description></description>
+<summary></summary>
+<title>218e54cf56f94342a46fefcf05c64f9a</title>
+<tags></tags>
+<type>Layer Package</type>
+<typekeywords>
+<typekeyword>File Geodatabase Feature Class</typekeyword>
+<typekeyword>Layer Package</typekeyword>
+<typekeyword>Data</typekeyword>
+<typekeyword>ArcMap</typekeyword>
+<typekeyword>ArcGlobe</typekeyword>
+<typekeyword>ArcGIS Explorer</typekeyword>
+<typekeyword>lpk</typekeyword>
+</typekeywords>
+<thumbnail>thumbnail/thumbnail.png</thumbnail>
+<documentation></documentation>
+<url></url>
+<datalastmodifiedtime></datalastmodifiedtime>
+<extent>
+<xmin>-121.168125553846</xmin>
+<ymin>34.0259971913791</ymin>
+<xmax>-117.607346641289</xmax>
+<ymax>35.8066667686238</ymax>
+</extent>
+<spatialreference>NAD_1983_California_Teale_Albers</spatialreference>
+<accessinformation>Cal Fire/CBI</accessinformation>
+<licenseinfo></licenseinfo>
+</ESRI_ItemInformation>

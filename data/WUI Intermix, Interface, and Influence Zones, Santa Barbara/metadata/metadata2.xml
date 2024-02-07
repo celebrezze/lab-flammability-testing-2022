@@ -1,0 +1,123 @@
+<?xml version="1.0" ?>
+<metadata>
+	<eainfo>
+		<detailed>
+			<attr>
+				<attrlabl>gridcode</attrlabl>
+				<attalias>gridcode</attalias>
+				<attrdef>gridcode</attrdef>
+			</attr>
+			<attr>
+				<attrlabl>Id</attrlabl>
+				<attalias>Id</attalias>
+				<attrdef>Id</attrdef>
+			</attr>
+			<attr>
+				<attrlabl>OBJECTID</attrlabl>
+				<attalias>OBJECTID</attalias>
+				<attrdef>Internal feature number.</attrdef>
+			</attr>
+			<attr>
+				<attrlabl>Shape</attrlabl>
+				<attalias>Shape</attalias>
+				<attrdef>Feature geometry.</attrdef>
+			</attr>
+			<attr>
+				<attrlabl>Shape_Area</attrlabl>
+				<attalias>Shape_Area</attalias>
+				<attrdef>Area of feature in internal units squared.</attrdef>
+			</attr>
+			<attr>
+				<attrlabl>Shape_Length</attrlabl>
+				<attalias>Shape_Length</attalias>
+				<attrdef>Length of feature in internal units.</attrdef>
+			</attr>
+			<attr>
+				<attrlabl>WUI_DESC</attrlabl>
+				<attalias>WUI_DESC</attalias>
+				<attrdef>WUI_DESC</attrdef>
+			</attr>
+		</detailed>
+	</eainfo>
+	<idinfo>
+		<ptcontac>
+			<cntinfo>
+				<cntemail>databasin@consbio.org</cntemail>
+				<cntperp>
+					<cntper>Conservation Biology Institute</cntper>
+					<cntorg>Conservation Biology Institute</cntorg>
+				</cntperp>
+			</cntinfo>
+		</ptcontac>
+		<useconst>This work is licensed under a  Creative Commons Attribution 3.0 License .</useconst>
+		<descript>
+			<abstract>This dataset adds housing density class (DEN4) and wildfire hazard (FHSZ) attributes to WUI12_2 - FRAP’s preliminary result in an effort to capture Wildland Urban Interface (WUI) for the 2015 Assessment. The current dataset is appropriate for displaying the overall pattern of WUI development at the county level, and comparing counties in terms of development patternsWildfire Influence Zone - wildfire susceptible vegetation up to 1.5 miles from Wildland Urban Interface or Wildland Urban Intermix</abstract>
+			<purpose>Created for the RPP project.</purpose>
+		</descript>
+		<datacred>California Department of Forestry and Fire Protection, Fire and Resource Assessment Program (FRAP), CBI</datacred>
+		<keywords>
+			<theme>
+				<themekey>wildfire,houses,wui,fire</themekey>
+			</theme>
+		</keywords>
+		<citation>
+			<citeinfo>
+				<onlink>https://databasin.org/datasets/218e54cf56f94342a46fefcf05c64f9a</onlink>
+				<title>WUI Influence</title>
+				<origin>Conservation Biology Institute</origin>
+			</citeinfo>
+		</citation>
+		<spdom>
+			<bounding>
+				<southbc>4032292.6919</southbc>
+				<northbc>4274050.84577</northbc>
+				<eastbc>-13091988.58</eastbc>
+				<westbc>-13488372.6105</westbc>
+			</bounding>
+		</spdom>
+	</idinfo>
+	<distinfo>
+		<distliab>No warranty is made by Data Basin for use of this dataset.  No warranty is made by Data Basin regarding the accuracy, reliability, or completeness of this dataset. In no event shall Data Basin have any liability whatsoever for payment of any consequential, incidental, indirect, special, or tort damages of any kind, including, but not limited to, any loss of profits arising out of the use or reliance on the geographic or attribute data contained within this dataset or arising out of the delivery, installation, operation, or support by Data Basin.</distliab>
+		<techpreq>Desktop GIS software.</techpreq>
+		<stdorder>
+			<digform>
+				<digtopt>
+					<onlinopt>
+						<accinstr>Download from https://databasin.org</accinstr>
+						<computer>
+							<networka>
+								<networkr>https://databasin.org/datasets/218e54cf56f94342a46fefcf05c64f9a</networkr>
+							</networka>
+						</computer>
+					</onlinopt>
+				</digtopt>
+				<digtinfo>
+					<filedec>No compression applied</filedec>
+					<formvern>ArcGIS 10</formvern>
+					<formspec>Feature Layer</formspec>
+					<formname>Feature Layer</formname>
+				</digtinfo>
+			</digform>
+			<ordering>Download from https://databasin.org</ordering>
+			<fees>None</fees>
+		</stdorder>
+		<distrib>
+			<cntinfo>
+				<cntemail>databasin_admin@consbio.org</cntemail>
+				<cntperp>
+					<cntorg>Data Basin</cntorg>
+					<cntper>Data Basin Administrator</cntper>
+				</cntperp>
+				<cntvoice>541-757-0687</cntvoice>
+				<cntaddr>
+					<country>USA</country>
+					<city>Corvallis</city>
+					<postal>97333</postal>
+					<address>136 SW Washington Ave, Suite 202</address>
+					<addrtype>physical address</addrtype>
+					<state>OR</state>
+				</cntaddr>
+			</cntinfo>
+		</distrib>
+	</distinfo>
+</metadata>
