@@ -35,22 +35,6 @@ flamm.df %>%
   dplyr::summarise(fd = mean(fd), fh = mean(fh),
                    temp_change = mean(temp_change), heat_flux_change = mean(heat_flux_change))
 ```
-
-```{r}
-flamo.df <- read.csv(here('data', 'processed-data', 'all_flamm_data.csv')) %>% 
-  filter(species != 'IRIDOU')
-
-prop.ig.df <- flamo.df %>% 
-  select(species, ignition) %>% 
-  mutate(ignition = ifelse(ignition == 1, 'ignited', 'non-ignited'))
-
-table(prop.ig.df$species, prop.ig.df$ignition)
-chisq.test(prop.ig.df2$species, prop.ig.df2$ignition)
-
-rm(flamo.df, prop.ig.df)
-```
-
-
 Although the mixed effects model selection tells us a lot about our data and provides useful insights, it doesn't include all of the variables and it leaves some of our question unanswered:
 
 *Question*: How can interspecific differences in flammability be described by plant traits -- plant hydration, plant morphology, leaf traits, VOC's?
@@ -197,6 +181,46 @@ hf.boxplot <- flamm.df %>%
           axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75),
           axis.text.y = element_text(size = 15))
 hf.boxplot
+```
+
+### Proportion Ignited
+```{r}
+# Data wrangling
+ig.dotplot.df <- flamm.df %>% 
+  group_by(species) %>% 
+  summarise(prop_ig = mean(prop_ig))  %>% 
+  mutate(Species = case_when(species == 'HETARB' ~ 'H. arb.',
+                             species == 'MALLAU' ~ 'M. lau.',
+                             species == 'CEAGRI' ~ 'C. gri.',
+                             species == 'SALAPI' ~ 'S. api.',
+                             species == 'SALLEU' ~ 'S. leu.',
+                             species == 'ARCDEN' ~ 'A. den.',
+                             species == 'ARTCAL' ~ 'A. cal.',
+                             species == 'ERIKAR' ~ 'E. kar.'))
+
+# Tukey-Kramer test results
+ig.spp.tukey.labels <- data.frame(species = c('HETARB', 'CEAGRI', 'SALAPI', 'MALLAU', 'SALLEU', 'ARCDEN', 'ARTCAL', 'ERIKAR'), letters = c('ab', 'ab', 'a', 'ab', 'a', 'ab', 'b', 'b'), adj = c(0, 0, 6, 6, 0, 6, 0, 6)) # manually extracted from above dataframe (couldn't figure out way to automate process w/ emmeans)
+
+# Visualization
+ig.dotplot <- ig.dotplot.df %>%
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot(aes()) +
+    geom_point(aes(x = species, y = prop_ig*100, color = species), size = 10) +
+    geom_text(aes(x = species, y = 86 + adj, label = letters), fontface = 'bold',
+              data = ig.spp.tukey.labels, size = 6) +
+    labs(x = 'Species', y = 'Proportion Autoignited') +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    scale_y_continuous(limits = c(0, 100), breaks = c(0, 25, 50, 75, 100)) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          #axis.text.x = element_text(face = 'italic', size = 13, angle = 20, vjust = 0.9, hjust=0.75),
+          axis.text.y = element_text(size = 15))
+ig.dotplot
 ```
 
 ## Traits
@@ -371,7 +395,7 @@ lfm.dotplot <- flamm.dotplot.df2 %>%
     scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
     theme_bw() +
     theme(legend.position = 'none',
-          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.y = element_text(face = 'bold', size = 18, margin = margin(r = 12.5)),
           axis.title.x = element_blank(),
           axis.text.x = element_text(face = 'italic', size = 13, angle = 20, vjust = 0.9, hjust=0.75),
           axis.text.y = element_text(size = 15))
@@ -389,7 +413,7 @@ dmc.boxplot <- flamm.df %>%
     geom_boxplot(aes(x = species, y = dmc, color = species), outlier.shape = NA, alpha= 0.8) +
     geom_jitter(aes(x = species, y = dmc, color = species), width = 0.2, alpha = 0.2) +
     labs(x = 'Species', y = 'Dry Matter Content (%)') +
-    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2'))
     theme_bw() +
     theme(legend.position = 'none',
           axis.title = element_text(face = 'bold', size = 18),
@@ -408,9 +432,10 @@ dmc.dotplot <- flamm.dotplot.df2 %>%
     geom_linerange(aes(ymin = dmc-sd_dmc, ymax = dmc+sd_dmc), linewidth = 1) +
     labs(x = 'Species', y = 'Dry Matter Content (%)') +
     scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    scale_y_continuous(limits = c(0, 12), breaks = c(0, 3, 6, 9, 12)) +
     theme_bw() +
     theme(legend.position = 'none',
-          axis.title = element_text(face = 'bold', size = 18),
+          axis.title.y = element_text(face = 'bold', size = 18, margin = margin(r = 5)),
           axis.title.x = element_blank(),
           axis.text.x = element_text(face = 'italic', size = 13, angle = 20, vjust = 0.9, hjust=0.75),
           axis.text.y = element_text(size = 15))
@@ -489,7 +514,7 @@ ggarrange(fh.boxplot, fd.boxplot, hf.boxplot, tc.boxplot, sw.boxplot, branching.
 #ggsave(here('figures', 'main_figures', 'spp.boxplots.png'), height = 14, width = 13.5) # height was 9 w/ two rows
 
 # dotplots
-spp.dotplots <- ggarrange(lfm.dotplot, dmc.dotplot, lmr.dotplot, ncol = 3, nrow = 1)
+spp.dotplots <- plot_grid(lfm.dotplot, dmc.dotplot, lmr.dotplot, rel_widths = c(1.05, 1, 1.02), ncol = 3, nrow = 1)
 spp.dotplots
 
 ggsave(here('figures', 'extra_figures', 'spp.dotplots.png'), height = 4, width = 13.5) # height was 9 w/ two rows
@@ -524,10 +549,22 @@ no.tukey.labels.df <- data.frame(species = c(rep(c("HETARB", "CEAGRI", "SALAPI",
                                  y.pos = c(rep(0, 24)),
                                  variable = c(rep('lfm', 8), rep('dmc', 8),
                                               rep('leaf_mass_ratio', 8)))
-tukey.labels.df <- rbind(fh.spp.tukey.labels, fd.spp.tukey.labels, tc.spp.tukey.labels, hf.spp.tukey.labels, sw.spp.tukey.labels, branching.spp.tukey.labels)
+
+flamm.tukey.labels.df <- rbind(fh.spp.tukey.labels, fd.spp.tukey.labels, tc.spp.tukey.labels, hf.spp.tukey.labels)
+
+traits.tukey.labels.df <- rbind(sw.spp.tukey.labels, branching.spp.tukey.labels) %>% 
+  mutate(Species = case_when(species == 'HETARB' ~ 'H. arb.',
+                             species == 'MALLAU' ~ 'M. lau.',
+                             species == 'CEAGRI' ~ 'C. gri.',
+                             species == 'SALAPI' ~ 'S. api.',
+                             species == 'SALLEU' ~ 'S. leu.',
+                             species == 'ARCDEN' ~ 'A. den.',
+                             species == 'ARTCAL' ~ 'A. cal.',
+                             species == 'ERIKAR' ~ 'E. kar.'))
 ```
 
 ## Visualization
+ITERATION #1 (No proportion ignited)
 ```{r}
 variable_names <- c(fh = 'Flame Height (cm)',
                     fd = 'Flame Duration (sec)',
@@ -537,7 +574,8 @@ variable_names <- c(fh = 'Flame Height (cm)',
                     branching  = 'Branching (branches/cm)',
                     lfm  = 'Live Fuel Moisture (%)',
                     dmc  = 'Dry Matter Content (%)',
-                    leaf_mass_ratio = 'Leaf Mass Ratio (%)')
+                    leaf_mass_ratio = 'Leaf Mass Ratio (%)',
+                    prop_ig = 'Proportion Autoignited (%)')
 
 main.boxplots <- flamm.df %>% 
   filter(fd < 70, temp_change < 100, branching < 0.75, leaf_mass_ratio > 0.4) %>% 
@@ -572,9 +610,83 @@ main.boxplots
 
 plot_grid(main.boxplots, spp.dotplots, rel_heights = c(2, 1.12), ncol = 1)
 
-ggsave(here('figures', 'main_figures', 'clean.spp.boxplots.png'), height = 12, width = 13.5) # height was 9 w/ two rows
+ggsave(here('figures', 'extra_figures', 'clean.spp.boxplots.png'), height = 12, width = 13.5) # height was 9 w/ two rows
 ```
 
+ITERATION #2 (Including proportion ignited)
+```{r}
+flamm.boxplots <- flamm.df %>% 
+  filter(fd < 70, temp_change < 100) %>% 
+  pivot_longer(cols = c(fh, fd, temp_change, heat_flux_change),
+               names_to = 'variable',
+               values_to = 'value') %>% 
+  mutate(species = fct_relevel(species, c('HETARB', 'MALLAU', 'CEAGRI', 'SALAPI', 'SALLEU',
+                                                 'ARCDEN', 'ARTCAL', 'ERIKAR'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = species, y = value, color = species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = species, y = value, color = species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = species, y = y.pos, label = letters), fontface = 'bold',
+              data = flamm.tukey.labels.df, size = 6) +
+    facet_wrap(~factor(variable, c('fh', 'fd', 'heat_flux_change', 'temp_change')),
+               scales = 'free_y',
+               strip.position = 'left',
+               labeller = as_labeller(variable_names),
+               nrow = 1) +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_blank(),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          #axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75), # hash out if including dotplots
+          axis.text.y = element_text(size = 15),
+          strip.background = element_blank(),
+          strip.placement = 'outside',
+          strip.text = element_text(size = 18, face = 'bold'))
+flamm.boxplots
+flamm.plots <- plot_grid(flamm.boxplots, ig.dotplot, rel_widths = c(4,1), nrow = 1)
+
+traits.boxplots <- flamm.df %>% 
+  mutate(Species = case_when(species == 'HETARB' ~ 'H. arb.',
+                             species == 'MALLAU' ~ 'M. lau.',
+                             species == 'CEAGRI' ~ 'C. gri.',
+                             species == 'SALAPI' ~ 'S. api.',
+                             species == 'SALLEU' ~ 'S. leu.',
+                             species == 'ARCDEN' ~ 'A. den.',
+                             species == 'ARTCAL' ~ 'A. cal.',
+                             species == 'ERIKAR' ~ 'E. kar.')) %>% 
+  filter(branching < 0.75) %>% 
+  pivot_longer(cols = c(sample_wt, branching),
+               names_to = 'variable',
+               values_to = 'value') %>% 
+  mutate(Species = fct_relevel(Species, c('H. arb.', 'M. lau.', 'C. gri.', 'S. api.', 'S. leu.', 'A. den.', 'A. cal.', 'E. kar.'))) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = Species, y = value, color = Species), outlier.shape = NA, alpha= 0.8) +
+    geom_jitter(aes(x = Species, y = value, color = Species), width = 0.2, alpha = 0.2) +
+    geom_text(aes(x = Species, y = y.pos, label = letters), fontface = 'bold',
+              data = traits.tukey.labels.df, size = 6) +
+    facet_wrap(~factor(variable, c('sample_wt','branching')),
+               scales = 'free_y',
+               strip.position = 'left',
+               labeller = as_labeller(variable_names)) +
+    scale_color_manual(values = c('#925E9FB2', '#AD002AB2', '#42B540B2', '#ADB6B6B2', '#1B1919B2','#00468BB2', '#ED0000B2', '#0099B4B2')) +
+    theme_bw() +
+    theme(legend.position = 'none',
+          axis.title = element_blank(),
+          #axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.x = element_text(size = 12, angle = 20, vjust = 0.9, hjust=0.75), # hash out if including dotplots
+          axis.text.y = element_text(size = 15),
+          strip.background = element_blank(),
+          strip.placement = 'outside',
+          strip.text = element_text(size = 18, face = 'bold'))
+traits.boxplots
+traits.plots <- plot_grid(traits.boxplots, spp.dotplots, rel_widths = c(1.98, 3), nrow = 1)
+
+plot_grid(flamm.plots, traits.plots, rel_heights = c(1, 1.06), ncol = 1)
+
+ggsave(here('figures', 'main_figures', 'Fig3.spp.boxplots.png'), height = 8.5, width = 22.5) # height was 9 w/ two rows
+```
 
 # REMEF Boxplots, ANOVAs
 ```{r}

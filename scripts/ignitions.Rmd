@@ -16,6 +16,12 @@ source(here("scripts", "source_code.R"))
 source(here('scripts', 'mem.selection.function.R')) #this is where mem.selection(), mem.selection.table() and mallows.cp() functions are stored
 
 flamm.df <- read.csv(here('data', 'processed-data', 'all_data.csv'))
+
+library(DHARMa)
+library(multcomp)
+#install.packages('lsmeans')
+library(lsmeans)
+library(car)
 ```
 
 # Data Wrangling
@@ -23,10 +29,11 @@ Basically, copying the mem.df from MEM.Rmd
 ```{r}
 mem.df <- flamm.df %>% 
   unite('plant_id', c(species, plant), sep = '_', remove = F) %>% 
-  select(species, thickness, lfm, leaf_area, LMA, sample_wt, leaf_mass_ratio, branching, mpa,
-         ignition, fh, fd, temp_change, heat_flux_change, prop_ig, dw_flam_sample,
-         ww_flam_sample, sample_density, branch_volume, start_temp, leaf_area, branch_height,
-         stem_dmc, leaf_dmc, dmc, stem_sav, leaf_sav, dw_sppdev, plant_id) %>% 
+  select(species, thickness, lfm, leaf_area, LMA, sample_wt, leaf_mass_ratio,
+         branching, mpa, ignition, fh, fd, temp_change, heat_flux_change, prop_ig,
+         dw_flam_sample, ww_flam_sample, sample_density, branch_volume, start_temp,
+         leaf_area, branch_height, stem_dmc, leaf_dmc, dmc, stem_sav, leaf_sav,
+         dw_sppdev, plant_id) %>% 
   mutate(lfm = scale(lfm), mpa = scale(mpa), ww_flam_sample = scale(ww_flam_sample),
          dw_flam_sample = scale(dw_flam_sample), sample_density = scale(sample_density),
          LMA = scale(LMA), thickness = scale(thickness),
@@ -37,47 +44,142 @@ mem.df <- flamm.df %>%
          temp_change = scale(temp_change), heat_flux_change = scale(heat_flux_change),
          leaf_area = scale(leaf_area), branch_height = scale(branch_height),
          stem_dmc = scale(stem_dmc), leaf_dmc = scale(leaf_dmc), dmc = scale(dmc),
-         stem_sav = scale(stem_sav), leaf_sav= scale(leaf_sav), dw_sppdev= scale(dw_sppdev)) %>% 
+         stem_sav = scale(stem_sav), leaf_sav= scale(leaf_sav),
+         dw_sppdev= scale(dw_sppdev)) %>% 
   mutate(ignition_binary = as.numeric(ifelse(ignition == 'M', 0, ignition))) %>% 
-  drop_na(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_area, leaf_sav, thickness, species)
+  drop_na(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, stem_sav, thickness, species)
 
 mem.rf.df <- mem.df %>% 
-  select(ignition_binary, lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness, species)
+  select(ignition_binary, lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness, species) %>% 
+  drop_na(ignition_binary, lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness, species)
 
 mem.predictors.df <- mem.df %>% 
-  select(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness, species) # fourteen predictors (note: no ww or dw); removed  thickness, leaf_area, sample_density, branch_volume, and branch_height from initial consideration as more than 14 predictors starts to make the model selection process take a really long time or cause the R session to abort
+  select(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, stem_sav, thickness, species) 
+
+mem.predictors.df.short <- mem.df %>% 
+  select(lfm, sample_wt, branching, species) 
 ```
 
 # Interspecific Differences
-Using binomial mixed effects model w/ species as only fixed effect
+## Chi-squared Test
 ```{r}
-ig.spp.mem <- lmer(ignition_binary ~ species + (1|plant_id), data = mem.df)
-summary(ig.spp.mem)
-anova(ig.spp.mem)
-# tukey-kramer test adjusted for MEM
-ig.spp.tukey <- emmeans(ig.spp.mem, pairwise ~ species, adjust = 'tukey')
-ig.spp.tukey.df <- summary(ig.spp.tukey$contrasts)
+prop.ig.df <- flamm.df %>% 
+  select(species, ignition) %>% 
+  mutate(ignition = ifelse(ignition == 1, 'ignited', 'non-ignited'))
+
+table(prop.ig.df$species, prop.ig.df$ignition)
+chisq.test(prop.ig.df$species, prop.ig.df$ignition)
 ```
 
+## GLMM and Tukey-Kramer
+Using binomial generalized mixed effects model w/ species as only fixed effect
 ```{r}
-ig.spp.binomial <- glmer(ignition_binary ~ species + (1|plant_id), family = binomial, data = mem.df)
-summary(ig.spp.binomial)
-anova(ig.spp.binomial)
-# tukey-kramer test adjusted for MEM
-ig.spp.bin.tukey <- emmeans(ig.spp.binomial, pairwise ~ species, adjust = 'tukey')
-# ig.spp.bin.tukey.df <- summary(ig.spp.binomial$contrasts) # returns error...
-```
+flamm.df <- flamm.df %>% 
+  unite('plant_id', c(species, plant), sep = '_', remove = F) %>% 
+  mutate(species = as.factor(species)) %>% 
+  mutate(ignition_binary = as.numeric(ifelse(ignition == 'M', 0, ignition)))
 
+# model structure
+ig.spp.binomial2 <- glmmTMB(ignition_binary ~ species + (1|plant_id), family = binomial, data = flamm.df)
+
+# method 1
+ig.spp.bin.tukey <- emmeans(ig.spp.binomial2, pairwise ~ species, adjust = 'tukey')
+summary(ig.spp.bin.tukey)
+
+# method 2
+lsm.ig.spp <- lsmeans(ig.spp.binomial2, c("species"))
+summary(lsm.ig.spp)
+cld(lsm.ig.spp, Letters=letters)
+```
 
 # Model Selection
+GLMM
 ```{r}
-ig.mem.selection <- mem.selection('ignition_binary', mem.predictors.df, mem.df)
-ig.model.df <- ig.mem.selection[[1]] %>% 
-  mutate(ABIC = AIC + BIC)
-ig.mod.list <- ig.mem.selection[[2]]
-ig.top.mem <- mem.selection.table(ig.model.df, ig.mod.list, 'Ignitions_MEM.html') %>% 
-  mutate(flam.var = 'ignition_binary')
+ig.glmm.selection <- glmm.selection('ignition_binary', mem.predictors.df.short, mem.df, binomial, zero.inflation = '0')
+ig.glmm.df <- ig.glmm.selection[[1]]
+ig.glmm.list <- ig.glmm.selection[[2]]
 ```
+
+```{r}
+vif(mod.list[[4]])
+
+y.var <- 'ignition_binary'
+predictors <- mem.predictors.df.short
+df <- mem.df
+mod.family <- binomial
+zero.inflation <- '0'
+rem.str <- '(1|plant_id)'
+
+# FIRST: List models
+# empty list
+mod.list <- list()
+call.vec <- c()
+  
+# setting up a nested for loop to list all possible models including those predictors
+for(i in 2:ncol(predictors)){
+    call <- colnames(predictors) %>%
+      combinations(n = ncol(predictors), r = i, repeats.allowed = F) %>% 
+      apply(1, paste0, collapse = ' + ') # all possible combinations of models from 2 - # of predictors we're interested in (note: cannot include only 1 predictor, as this breaks multicollinearity for loop below; also, we're probably not interested in a model with only one explanatory variable)
+    for(j in (1+length(call.vec)):(length(call)+length(call.vec))){ # adding linear mixed effects model to mod.list
+      mod.list[[j]] <- glmmTMB(as.formula(paste(y.var, '~', call[j-length(call.vec)], '+', rem.str, sep = '')), data = df, family = mod.family, ziformula = as.formula(paste0('~', zero.inflation, sep = '')))
+    }
+    call.vec <- append(call.vec, call) # to index where to put model into model list
+  }
+  
+# CREATE DATAFRAME
+model.df <- data.frame(model.id = c(1:length(mod.list)),
+                         call = c(rep(NA, length(mod.list))),
+                         multicollinearity = c(rep(NA, length(mod.list))),
+                         AIC = c(rep(NA, length(mod.list))),
+                         BIC = c(rep(NA, length(mod.list))),
+                         R2_marg = c(rep(NA, length(mod.list))),
+                         R2_cond = c(rep(NA, length(mod.list))))
+  
+# SECOND: FLAG ANY MODELS THAT BREAK MULTICOLINEARITY ASSUMPTIONS
+for(i in 1:length(mod.list)){
+    vif.df <- multicollinearity(mod.list[[i]])
+    ifelse(max(vif.df$VIF) > 5, model.df$multicollinearity[i] <- 'yes', 
+           model.df$multicollinearity[i] <- 'no')
+  }
+  
+for(i in 1:length(mod.list)){
+    if(model.df$multicollinearity[i] == 'yes'){
+      mod.list[[i]] <- NA
+    }}
+  
+  # THIRD: CALCULATE AIC, BIC, MALLOWS CP
+for(i in 1:length(mod.list)) {
+    if(model.df$multicollinearity[i] == 'yes')
+    {model.df[i, 3:6] <- NA}
+    else{
+      model.df$call[i] <- paste0(mod.list[[i]]$call$formula)[3]
+      model.df$AIC[i] <- AIC(mod.list[[i]])
+      model.df$BIC[i] <- BIC(mod.list[[i]])
+      model.df$R2_marg[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_marginal)
+      model.df$R2_cond[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_conditional)
+    }
+  }
+output <- list(model.df, mod.list)
+return(output)
+
+```
+
+
+
+
+```{r}
+library(DHARMa)
+library(multcomp)
+install.packages('lsmeans')
+library(lsmeans)
+library(car)
+
+Anova(ig.glmm.list[[1]])
+
+lsm.ig.glmm <- lsmeans(ig.glmm.list[[1]], c("species"))
+cld(lsm.ig.glmm, Letters=letters)
+```
+
 
 # Regressions
 ```{r}
