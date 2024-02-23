@@ -111,15 +111,16 @@ glmm.selection <- function(y.var, predictors, df, mod.family, zero.inflation, re
            model.df$multicollinearity[i] <- 'no')
   }
   
-  for(i in 1:length(mod.list)){
-    if(model.df$multicollinearity[i] == 'yes'){
-      mod.list[[i]] <- NA
-    }}
+#  for(i in 1:length(mod.list)){
+#    if(model.df$multicollinearity[i] == 'yes'){
+#      mod.list[[i]] <- NA
+#    }}
   
   # THIRD: CALCULATE AIC, BIC, MALLOWS CP
   for(i in 1:length(mod.list)) {
     if(model.df$multicollinearity[i] == 'yes')
-    {model.df[i, 3:6] <- NA}
+    {model.df$call[i] <- paste0(mod.list[[i]]$call$formula)[3]
+      model.df[i, 4:6] <- NA}
     else{
       model.df$call[i] <- paste0(mod.list[[i]]$call$formula)[3]
       model.df$AIC[i] <- AIC(mod.list[[i]])
