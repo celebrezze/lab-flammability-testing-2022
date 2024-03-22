@@ -47,8 +47,8 @@ mem.df <- flamm.df %>%
          stem_sav = scale(stem_sav), leaf_sav= scale(leaf_sav),
          dw_sppdev= scale(dw_sppdev)) %>% 
   mutate(ignition_binary = as.numeric(ifelse(ignition == 'M', 0, ignition))) %>% 
-  drop_na(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, stem_sav, thickness, species) %>% 
-  filter(species != 'HETARB', species != 'ARCDEN')
+  drop_na(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, stem_sav, thickness, species) #%>% 
+  #filter(species != 'HETARB', species != 'ARCDEN')
 
 mem.df %>% 
   group_by(species) %>% 
@@ -58,16 +58,9 @@ mem.rf.df <- mem.df %>%
   select(ignition_binary, lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness, species) %>% 
   drop_na(ignition_binary, lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness, species)
 
-#mem.predictors.df <- mem.df %>% 
-#  select(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness) # species
-
 # primary predictors
 mem.predictors.df <- mem.df %>% 
-  select(lfm, LMA, sample_wt, leaf_mass_ratio, branching, start_temp, stem_sav, leaf_sav, branch_volume, dmc)
-
-# Second selection (see below note)
-#mem.predictors.df <- mem.df %>% 
-#  select(lfm, sample_wt, mpa, branching, dmc, branch_volume, sample_density, leaf_area, dw_flam_sample, ww_flam_sample, thickness)
+  select(lfm, LMA, sample_wt, leaf_mass_ratio, branching, mpa, start_temp, dmc, branch_volume, stem_sav, leaf_sav, thickness)
 
 mem.predictors.df.short <- mem.df %>% 
   select(lfm, sample_wt, branching, species) 
@@ -107,181 +100,47 @@ cld(lsm.ig.spp, Letters=letters)
 
 # Model Selection
 GLMM
-```{r}
+```{r, warning=F, message=F}
 ig.glmm.selection <- glmm.selection('ignition_binary', mem.predictors.df, mem.df, binomial, zero.inflation = '0', rem.str = '(1|species/plant_id)')
-ig.glmm.df <- ig.glmm.selection[[1]]
+ig.glmm.df <- ig.glmm.selection[[1]] %>% 
+  mutate(selection = 'fixed')
 ig.glmm.list <- ig.glmm.selection[[2]]
 ```
 
-## No species 
-```{r}
-m1 <- glmmTMB(ignition_binary ~ species + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m1) # higher
-
-m2 <- glmmTMB(ignition_binary ~ species + lfm + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m2) # higher
-
-m3 <- glmmTMB(ignition_binary ~ species + LMA + stem_sav + leaf_mass_ratio + (1|plant_id), family = binomial, data = mem.df)
-AIC(m3) # higher
-
-m4 <- glmmTMB(ignition_binary ~ species + LMA + stem_sav + thickness + (1|plant_id), family = binomial, data = mem.df)
-AIC(m4) # higher
-
-m5 <- glmmTMB(ignition_binary ~ species + LMA + stem_sav + thickness + leaf_mass_ratio + (1|plant_id), family = binomial, data = mem.df)
-AIC(m5) # higher
-
-m6 <- glmmTMB(ignition_binary ~ species + branching + dmc + lfm + thickness + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m6) # higher
-
-m7 <- glmmTMB(ignition_binary ~ species + branching + lfm + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m7) # higher
-
-m8 <- glmmTMB(ignition_binary ~ species + dmc + lfm + thickness + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m8) # higher
-
-m9 <- glmmTMB(ignition_binary ~ species + LMA + sample_wt + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m9) # higher
-
-m10 <- glmmTMB(ignition_binary ~ species + lfm + thickness + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m10) # higher
-
-m11 <- glmmTMB(ignition_binary ~ species + dmc + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m11) # higher
-
-m12 <- glmmTMB(ignition_binary ~ species + dmc + thickness + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m12) # higher
-
-m13 <- glmmTMB(ignition_binary ~ species + branching + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m13) # higher
-
-m14 <- glmmTMB(ignition_binary ~ species + dmc + lfm + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m14) # higher
-
-m15 <- glmmTMB(ignition_binary ~ species + branching + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m15) # higher
-
-m16 <- glmmTMB(ignition_binary ~ species + branching + lfm + thickness + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m16) # higher
-
-m17 <- glmmTMB(ignition_binary ~ species + start_temp + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m17) # higher
-
-m18 <- glmmTMB(ignition_binary ~ species + mpa + LMA + stem_sav + (1|plant_id), family = binomial, data = mem.df)
-AIC(m18) # higher
-
-m19 <- glmmTMB(ignition_binary ~ species + branching + thickness + (1|plant_id), family = binomial, data = mem.df)
-AIC(m19) # higher
-
-m20 <- glmmTMB(ignition_binary ~ species + thickness + (1|plant_id), family = binomial, data = mem.df)
-AIC(m20) # higher
-
-m21 <- glmmTMB(ignition_binary ~ species + branching + (1|plant_id), family = binomial, data = mem.df)
-AIC(m21) # higher
-```
-
 ## Testing for Interactions
-### Function
-```{r}
-# NOTE: y.var must be a character vector
-glmm.int.selection <- function(y.var, predictors, df, mod.family, zero.inflation, rem.str = '(1|plant_id)'){
-# FIRST: List models
-# Generate all possible combinations of two predictors for interaction
-interaction_combinations <- combn(predictors, 2, simplify = FALSE)
-
-# Create an empty list to store model results
-mod.list <- list()
-
-# Loop through the interaction combinations
-for (combo in interaction_combinations) {
-  # Create the formula for the model (e.g., outcome ~ predictor1 * predictor2)
-  formula <- as.formula(paste(y.var, "~", paste(combo, collapse = "*"), "+", rem.str))
-  
-  # Fit the mixed-effects model
-  model <- glmmTMB(formula, data = df, family = mod.family, ziformula = as.formula(paste0('~', zero.inflation, sep = '')))
-  
-  # Store the model result in the list
-  mod.list[[paste(combo, collapse = "_")]] <- model
-}
-  
-  # CREATE DATAFRAME
-  model.df <- data.frame(model.id = c(1:length(mod.list)),
-                         call = c(rep(NA, length(mod.list))),
-                         multicollinearity = c(rep(NA, length(mod.list))),
-                         AIC = c(rep(NA, length(mod.list))),
-                         BIC = c(rep(NA, length(mod.list))),
-                         R2_marg = c(rep(NA, length(mod.list))),
-                         R2_cond = c(rep(NA, length(mod.list))))
-  
-  # SECOND: FLAG ANY MODELS THAT BREAK MULTICOLINEARITY ASSUMPTIONS
-#  for(i in 1:length(mod.list)){
-#    vif.df <- multicollinearity(mod.list[[i]])
-#    ifelse(max(vif.df$VIF) > 5, model.df$multicollinearity[i] <- 'yes', 
-#           model.df$multicollinearity[i] <- 'no')
-#  }
-  
-#  for(i in 1:length(mod.list)){
-#    if(model.df$multicollinearity[i] == 'yes'){
-#      mod.list[[i]] <- NA
-#    }}
-  
-  # THIRD: CALCULATE AIC, BIC, MALLOWS CP
-  for(i in 1:length(mod.list)) {
-#    if(model.df$multicollinearity[i] == 'yes')
- #   {model.df[i, 3:6] <- NA}
-#    else{
-      model.df$call[i] <- paste0(mod.list[[i]]$call$formula)[3]
-      model.df$AIC[i] <- AIC(mod.list[[i]])
-      model.df$BIC[i] <- BIC(mod.list[[i]])
-      model.df$R2_marg[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_marginal)
-      model.df$R2_cond[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_conditional)
-    }
-# }
-  output <- list(model.df, mod.list)
-  return(output)
-}
-```
 
 ### Applying Function
-```{r}
+```{r, warning=F, message=F}
 # Defining predictors we're interested in as a character vector
-predictors <- c('lfm', 'LMA', 'sample_wt', 'leaf_mass_ratio', 'branching', 'dw_flam_sample', 'start_temp', 'ww_flam_sample', 'branch_volume', 'dmc', 'mpa', 'thickness', 'stem_sav', 'leaf_sav')
+predictors <- c('lfm', 'LMA', 'sample_wt', 'leaf_mass_ratio', 'branching', 'mpa', 'start_temp', 'dmc', 'branch_volume', 'stem_sav', 'leaf_sav', 'thickness')
 
-glmm.ig.int.selection <- glmm.int.selection('ignition_binary', predictors, mem.df, binomial, zero.inflation = '0', rem.str = '(1|species/plant_id)')
-ig.int.glmm.df <- glmm.ig.int.selection[[1]]
+glmm.ig.int.selection <- glmm.int.selection('ignition_binary', predictors, mem.df, binomial, zero.inflation = '0')
+ig.int.glmm.df <- glmm.ig.int.selection[[1]] %>% 
+  mutate(selection = 'interactions')
 ig.int.glmm.list <- glmm.ig.int.selection[[2]]
+
+glmm.ig.int.selection_1 <- glmm.int.fixed.selection('ignition_binary', c('start_temp', 'thickness'), mem.predictors.df, df = mem.df, mod.family = binomial, zero.inflation = '0')
+ig.int.glmm.df_1 <- glmm.ig.int.selection_1[[1]] %>% 
+  mutate(selection = 'fixed_int1')
+
+glmm.ig.int.selection_2 <- glmm.int.fixed.selection('ignition_binary', c('stem_sav', 'leaf_sav'), mem.predictors.df, df = mem.df, mod.family = binomial, zero.inflation = '0')
+ig.int.glmm.df_2 <- glmm.ig.int.selection_2[[1]] %>% 
+  mutate(selection = 'fixed_int2')
+
+glmm.ig.int.selection_3 <- glmm.int.fixed.selection('ignition_binary', c('LMA', 'stem_sav'), mem.predictors.df, df = mem.df, mod.family = binomial, zero.inflation = '0')
+ig.int.glmm.df_3 <- glmm.ig.int.selection_1[[1]] %>% 
+  mutate(selection = 'fixed_int3')
 ```
 
-### Adding Predictors
+Model dataframe
 ```{r}
-ig.int.glmm.list[[56]] <- glmmTMB(ignition_binary ~ start_temp*thickness + branching + (1|species/plant_id), family = binomial, data = mem.df)
-AIC(ig.int.glmm.list[[56]])
+all.ig.glmm.df <- rbind(ig.glmm.df, ig.int.glmm.df, ig.int.glmm.df_1, ig.int.glmm.df_2, ig.int.glmm.df_3) %>% 
+  drop_na(AIC)
 
-ig.int.glmm.list[[57]] <- glmmTMB(ignition_binary ~ start_temp*thickness + branch_volume + (1|species/plant_id), family = binomial, data = mem.df)
-AIC(ig.int.glmm.list[[57]])
-
-ig.int.glmm.list[[58]] <- glmmTMB(ignition_binary ~ start_temp*thickness + lfm + (1|species/plant_id), family = binomial, data = mem.df)
-AIC(ig.int.glmm.list[[58]])
-
-ig.int.glmm.list[[59]] <- glmmTMB(ignition_binary ~ start_temp*thickness + stem_sav + (1|species/plant_id), family = binomial, data = mem.df)
-AIC(ig.int.glmm.list[[59]]) # AIC = 192.35
-r2_nakagawa(ig.int.glmm.list[[59]])
-summary(ig.int.glmm.list[[59]])
-
-ig.int.glmm.list[[60]] <- glmmTMB(ignition_binary ~ stem_sav*leaf_sav + branching + (1|species/plant_id), family = binomial, data = mem.df)
-AIC(ig.int.glmm.list[[60]])
-
-ig.int.glmm.list[[61]] <- glmmTMB(ignition_binary ~ stem_sav*leaf_sav + start_temp + (1|species/plant_id), family = binomial, data = mem.df)
-AIC(ig.int.glmm.list[[61]])
-
-ig.int.glmm.list[[62]] <- glmmTMB(ignition_binary ~ stem_sav*leaf_sav + branch_volume + (1|species/plant_id), family = binomial, data = mem.df)
-AIC(ig.int.glmm.list[[62]])
-
-ig.int.glmm.list[[63]] <- glmmTMB(ignition_binary ~ stem_sav*leaf_sav + lfm + (1|species/plant_id), family = binomial, data = mem.df)
-AIC(ig.int.glmm.list[[63]])
-
-ig.int.glmm.list[[64]] <- glmmTMB(ignition_binary ~ stem_sav*leaf_sav + thickness + (1|species/plant_id), family = binomial, data = mem.df)
-AIC(ig.int.glmm.list[[64]])
+top.ig.glmm.df <- all.ig.glmm.df %>% 
+  filter(AIC < min(all.ig.glmm.df$AIC) + 2)
 ```
+
 
 ### Diagnostics
 ```{r}
@@ -292,13 +151,7 @@ testUniformity(simulated) # looks good
 testDispersion(simulated) # looks good
 ```
 
-```{r}
-m1 <- glmmTMB(ignition_binary ~ species + branching + thickness + (1|plant_id), family = binomial, data = mem.df)
-multicollinearity(m1)
-
-multicollinearity(ig.int.glmm.list[[57]])
-```
-
+# -----
 
 ### Predicted Values
 ```{r}

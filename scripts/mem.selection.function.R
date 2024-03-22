@@ -44,7 +44,8 @@ mem.selection <- function(y.var, predictors, df, rem.str = '(1|species/plant_id)
                          BIC = c(rep(NA, length(mod.list))),
                          CP = c(rep(NA, length(mod.list))),
                          Cond_R2 = c(rep(NA, length(mod.list))),
-                         Marg_R2 = c(rep(NA, length(mod.list))))
+                         Marg_R2 = c(rep(NA, length(mod.list))),
+                         formula = c(rep(NA, length(mod.list))))
   
   # SECOND: FLAG ANY MODELS THAT BREAK MULTICOLINEARITY ASSUMPTIONS
   for(i in 1:length(mod.list)){
@@ -69,6 +70,7 @@ mem.selection <- function(y.var, predictors, df, rem.str = '(1|species/plant_id)
       model.df$Cond_R2[i] <- r2_nakagawa(mod.list[[i]])[[1]]
       model.df$Marg_R2[i] <- r2_nakagawa(mod.list[[i]])[[2]]
       model.df$CP[i] <- mallows.cp(mod.list[[i]], k = length(mod.list[[i]]@beta - 1), n = nrow(df))
+      model.df$formula[i] <- as.character(mod.list[[i]]@call)[2]
     }
   }
   output <- list(model.df, mod.list)
@@ -126,7 +128,8 @@ mem.univariate.selection <- function(y.var, predictors, df, rem.str = '(1|specie
                          BIC = c(rep(NA, length(mod.list))),
                          CP = c(rep(NA, length(mod.list))),
                          Cond_R2 = c(rep(NA, length(mod.list))),
-                         Marg_R2 = c(rep(NA, length(mod.list))))
+                         Marg_R2 = c(rep(NA, length(mod.list))),
+                         formula = c(rep(NA, length(mod.list))))
   
   # SECOND: CALCULATE AIC, BIC, MALLOWS CP
   for(i in 1:length(mod.list)) {
@@ -136,6 +139,7 @@ mem.univariate.selection <- function(y.var, predictors, df, rem.str = '(1|specie
     model.df$Cond_R2[i] <- r2_nakagawa(mod.list[[i]])[[1]]
     model.df$Marg_R2[i] <- r2_nakagawa(mod.list[[i]])[[2]]
     model.df$CP[i] <- mallows.cp(mod.list[[i]], k = length(mod.list[[i]]@beta - 1), n = nrow(df))
+    model.df$formula[i] <- as.character(mod.list[[i]]@call)[2]
   }
   output <- list(model.df, mod.list)
   return(output)
@@ -173,7 +177,8 @@ mem.firstorder.int.selection <- function(y.var, predictors, df, rem.str = '(1|sp
                          BIC = c(rep(NA, length(mod.list))),
                          CP = c(rep(NA, length(mod.list))),
                          Cond_R2 = c(rep(NA, length(mod.list))),
-                         Marg_R2 = c(rep(NA, length(mod.list))))
+                         Marg_R2 = c(rep(NA, length(mod.list))),
+                         formula = c(rep(NA, length(mod.list))))
   
   # SECOND: FLAG ANY MODELS THAT BREAK MULTICOLINEARITY ASSUMPTIONS
   for(i in 1:length(mod.list)){
@@ -198,6 +203,7 @@ mem.firstorder.int.selection <- function(y.var, predictors, df, rem.str = '(1|sp
       model.df$Cond_R2[i] <- r2_nakagawa(mod.list[[i]])[[1]]
       model.df$Marg_R2[i] <- r2_nakagawa(mod.list[[i]])[[2]]
       model.df$CP[i] <- mallows.cp(mod.list[[i]], k = length(mod.list[[i]]@beta - 1), n = nrow(df))
+      model.df$formula[i] <- as.character(mod.list[[i]]@call)[2]
     }
   }
   output <- list(model.df, mod.list)
@@ -221,7 +227,7 @@ mem.int.fixed.selection <- function(y.var, interaction, predictors, df, rem.str 
     select(-interaction)
   
   # Loop through the interaction combinations
-  for(i in 2:ncol(predictors)){
+  for(i in 1:ncol(predictors)){
     call <- colnames(predictors) %>%
       combinations(n = ncol(predictors), r = i, repeats.allowed = F) %>% 
       apply(1, paste0, collapse = ' + ') # all possible combinations of models from 2 - # of predictors we're interested in (note: cannot include only 1 predictor, as this breaks multicollinearity for loop below; also, we're probably not interested in a model with only one explanatory variable)
@@ -239,7 +245,8 @@ mem.int.fixed.selection <- function(y.var, interaction, predictors, df, rem.str 
                          BIC = c(rep(NA, length(mod.list))),
                          CP = c(rep(NA, length(mod.list))),
                          Cond_R2 = c(rep(NA, length(mod.list))),
-                         Marg_R2 = c(rep(NA, length(mod.list))))
+                         Marg_R2 = c(rep(NA, length(mod.list))),
+                         formula = c(rep(NA, length(mod.list))))
   
   # SECOND: FLAG ANY MODELS THAT BREAK MULTICOLINEARITY ASSUMPTIONS
   for(i in 1:length(mod.list)){
@@ -264,6 +271,7 @@ mem.int.fixed.selection <- function(y.var, interaction, predictors, df, rem.str 
       model.df$Cond_R2[i] <- r2_nakagawa(mod.list[[i]])[[1]]
       model.df$Marg_R2[i] <- r2_nakagawa(mod.list[[i]])[[2]]
       model.df$CP[i] <- mallows.cp(mod.list[[i]], k = length(mod.list[[i]]@beta - 1), n = nrow(df))
+      model.df$formula[i] <- as.character(mod.list[[i]]@call)[2]
     }
   }
   output <- list(model.df, mod.list)
@@ -298,33 +306,118 @@ glmm.selection <- function(y.var, predictors, df, mod.family, zero.inflation, re
                          AIC = c(rep(NA, length(mod.list))),
                          BIC = c(rep(NA, length(mod.list))),
                          R2_marg = c(rep(NA, length(mod.list))),
-                         R2_cond = c(rep(NA, length(mod.list))))
+                         R2_cond = c(rep(NA, length(mod.list))),
+                         formula = c(rep(NA, length(mod.list))))
   
-  # SECOND: FLAG ANY MODELS THAT BREAK MULTICOLINEARITY ASSUMPTIONS
-  for(i in 1:length(mod.list)){
-    vif.df <- multicollinearity(mod.list[[i]])
-    ifelse(max(vif.df$VIF) > 5, model.df$multicollinearity[i] <- 'yes', 
-           model.df$multicollinearity[i] <- 'no')
-  }
-  
-#  for(i in 1:length(mod.list)){
-#    if(model.df$multicollinearity[i] == 'yes'){
-#      mod.list[[i]] <- NA
-#    }}
-  
-  # THIRD: CALCULATE AIC, BIC, MALLOWS CP
+  # SECOND: CALCULATE AIC, BIC, MALLOWS CP, R2
   for(i in 1:length(mod.list)) {
-    if(model.df$multicollinearity[i] == 'yes')
-    {model.df$call[i] <- paste0(mod.list[[i]]$call$formula)[3]
-      model.df[i, 4:6] <- NA}
-    else{
       model.df$call[i] <- paste0(mod.list[[i]]$call$formula)[3]
       model.df$AIC[i] <- AIC(mod.list[[i]])
       model.df$BIC[i] <- BIC(mod.list[[i]])
       model.df$R2_marg[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_marginal)
       model.df$R2_cond[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_conditional)
+      model.df$formula[i] <- as.character(mod.list[[i]][['call']])[2]
     }
+  output <- list(model.df, mod.list)
+  return(output)
+}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# GENERALIZED LINEAR MIXED EFFECTS MODEL SELECTION (INTERACTIONS)
+
+# NOTE: y.var must be a character vector
+glmm.int.selection <- function(y.var, predictors, df, mod.family, zero.inflation, rem.str = '(1|species/plant_id)'){
+  # FIRST: List models
+  # Generate all possible combinations of two predictors for interaction
+  interaction_combinations <- combn(predictors, 2, simplify = FALSE)
+  
+  # Create an empty list to store model results
+  mod.list <- list()
+  
+  # Loop through the interaction combinations
+  for (combo in interaction_combinations) {
+    # Create the formula for the model (e.g., outcome ~ predictor1 * predictor2)
+    formula <- as.formula(paste(y.var, "~", paste(combo, collapse = "*"), "+", rem.str))
+    
+    # Fit the mixed-effects model
+    model <- glmmTMB(formula, data = df, family = mod.family, ziformula = as.formula(paste0('~', zero.inflation, sep = '')))
+    
+    # Store the model result in the list
+    mod.list[[paste(combo, collapse = "_")]] <- model
+  }
+  
+  # CREATE DATAFRAME
+  model.df <- data.frame(model.id = c(1:length(mod.list)),
+                         call = c(rep(NA, length(mod.list))),
+                         multicollinearity = c(rep(NA, length(mod.list))),
+                         AIC = c(rep(NA, length(mod.list))),
+                         BIC = c(rep(NA, length(mod.list))),
+                         R2_marg = c(rep(NA, length(mod.list))),
+                         R2_cond = c(rep(NA, length(mod.list))),
+                         formula = c(rep(NA, length(mod.list))))
+  
+  
+  # THIRD: CALCULATE AIC, BIC, MALLOWS CP
+  for(i in 1:length(mod.list)) {
+    model.df$call[i] <- paste0(mod.list[[i]]$call$formula)[3]
+    model.df$AIC[i] <- AIC(mod.list[[i]])
+    model.df$BIC[i] <- BIC(mod.list[[i]])
+    model.df$R2_marg[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_marginal)
+    model.df$R2_cond[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_conditional)
+    model.df$formula[i] <- as.character(mod.list[[i]][['call']])[2]
   }
   output <- list(model.df, mod.list)
   return(output)
 }
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# GENERALIZED LINEAR MIXED EFFECTS MODEL SELECTION (INTERACTIONS AND FIXED EFFECTS)
+
+# NOTE: y.var must be a character vector
+glmm.int.fixed.selection <- function(y.var, interaction, predictors, mod.family, zero.inflation, df, rem.str = '(1|species/plant_id)'){
+  # FIRST: List models
+  # Create an empty list to store model results
+  mod.list <- list()
+  call.vec <- c()
+  
+  # Remove terms from interaction term from predictors list so they are not duplicated in the function call; interaction terms are automatically included as single predictors as well as first-order interactions in lmer, so there is no need to have instances with lmer(y ~ a*b + a + b)
+  predictors <- predictors %>% 
+    select(-interaction)
+  
+  # Loop through the interaction combinations
+  for(i in 1:ncol(predictors)){
+    call <- colnames(predictors) %>%
+      combinations(n = ncol(predictors), r = i, repeats.allowed = F) %>% 
+      apply(1, paste0, collapse = ' + ') # all possible combinations of models from 2 - # of predictors we're interested in (note: cannot include only 1 predictor, as this breaks multicollinearity for loop below; also, we're probably not interested in a model with only one explanatory variable)
+    for(j in (1+length(call.vec)):(length(call)+length(call.vec))){ # adding linear mixed effects model to mod.list
+      mod.list[[j]] <- glmmTMB(as.formula(paste(y.var, '~',  paste(interaction, collapse = "*"), '+', call[j-length(call.vec)], '+', rem.str, sep = '')), data = df, family = mod.family, ziformula = as.formula(paste0('~', zero.inflation, sep = '')))
+    }
+    call.vec <- append(call.vec, call) # to index where to put model into model list
+  }
+  
+  # CREATE DATAFRAME
+  model.df <- data.frame(model.id = c(1:length(mod.list)),
+                         call = c(rep(NA, length(mod.list))),
+                         multicollinearity = c(rep(NA, length(mod.list))),
+                         AIC = c(rep(NA, length(mod.list))),
+                         BIC = c(rep(NA, length(mod.list))),
+                         R2_marg = c(rep(NA, length(mod.list))),
+                         R2_cond = c(rep(NA, length(mod.list))),
+                         formula = c(rep(NA, length(mod.list))))
+  
+  
+  # THIRD: CALCULATE AIC, BIC, MALLOWS CP
+  for(i in 1:length(mod.list)) {
+    model.df$call[i] <- paste0(mod.list[[i]]$call$formula)[3]
+    model.df$AIC[i] <- AIC(mod.list[[i]])
+    model.df$BIC[i] <- BIC(mod.list[[i]])
+    model.df$R2_marg[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_marginal)
+    model.df$R2_cond[i] <- as.numeric(r2_nakagawa(mod.list[[i]])$R2_conditional)
+    model.df$formula[i] <- as.character(mod.list[[i]][['call']])[2]
+  }
+  output <- list(model.df, mod.list)
+  return(output)
+}
+
