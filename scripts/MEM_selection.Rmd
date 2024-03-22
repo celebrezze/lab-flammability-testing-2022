@@ -291,7 +291,8 @@ top.fh.mem.df <- main.fh.mem.df %>%
   filter(AIC < min(main.fh.mem.df$AIC) + 2)
 ```
 
-### f) Stepwise Selection
+### f) Stepwise Selections
+P-values
 ```{r}
 # Maximal Model (all first-order interaction terms)
 max.fh.mem_int <- lmer(fh ~ lfm*LMA + lfm*sample_wt + lfm*leaf_mass_ratio + lfm*branching + lfm*mpa + lfm*start_temp + lfm*dmc + lfm*branch_volume + lfm*stem_sav + lfm*leaf_sav + lfm*thickness + LMA*sample_wt + LMA*leaf_mass_ratio + LMA*branching + LMA*mpa + LMA*start_temp + LMA*dmc + LMA*branch_volume + LMA*stem_sav + LMA*leaf_sav + LMA*thickness + sample_wt*leaf_mass_ratio + sample_wt*branching + sample_wt*mpa + sample_wt*start_temp + sample_wt*dmc + sample_wt*branch_volume + sample_wt*stem_sav + sample_wt*leaf_sav + sample_wt*thickness + leaf_mass_ratio*branching + leaf_mass_ratio*mpa + leaf_mass_ratio*start_temp + leaf_mass_ratio*dmc + leaf_mass_ratio*branch_volume + leaf_mass_ratio*stem_sav + leaf_mass_ratio*leaf_sav + leaf_mass_ratio*thickness + branching*mpa + branching*start_temp + branching*dmc + branching*branch_volume + branching*stem_sav + branching*leaf_sav + branching*thickness + mpa*start_temp + mpa*dmc + mpa*branch_volume + mpa*stem_sav + mpa*leaf_sav + mpa*thickness + start_temp*dmc + start_temp*branch_volume + start_temp*stem_sav + start_temp*leaf_sav + start_temp*thickness + dmc*branch_volume + dmc*stem_sav + dmc*leaf_sav + dmc*thickness + branch_volume*stem_sav + branch_volume*leaf_sav + branch_volume*thickness + stem_sav*leaf_sav + stem_sav*thickness + leaf_sav*thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness + (1|species/plant_id), mem.df, REML = T)
@@ -306,14 +307,21 @@ fh.step_fix <- step(max.fh.mem_fix, direction = 'both', ddf = 'Kenward-Roger', r
 fh.step_fix
 ```
 
+AIC
+direction = 'both' is not working with the random effect structure
+```{r}
+stepcAIC(max.fh.mem_int, 'backward', groupCandidates = 'species/plant_id')
+```
+
 ### g) LASSO
-#### Lambda Cross-validation 
+I am unable to get the nested random effects structure to work for glmmLasso, so below the LASSO uses plant_id as the random effect on intercept rather than a nested species/plant_id as we are using in our primary model selection
+#### g1) Lambda Cross-validation 
 from https://davidabugaber.com/blog/f/find-the-optimal-mixed-model-for-your-data-with-glmmlasso
 ```{r}
 #this loop takes much longer to run because there's more random intercepts
 
-#set lambdas... go from 10^-5 to 10^5, in 20 log steps (might take a while)
-lambda <- 10^seq(-5,5, length=20)
+#set lambdas... go from 10^-7 to 10^7, in 40 log steps (might take a while)
+lambda <- 10^seq(-7,7, length=40)
  
 #dummy vectors of model fit values for each lambda: BIC, AIC, prediction error
 BIC_vec <- rep(Inf, length(lambda))
@@ -328,9 +336,9 @@ for (j in 1:length(BIC_vec)){
  print(paste("Iteration ", j, sep=""))
  
  glm1 <- try( #throwing main variables identified by the information criteria model selection into the LASSO cross-validation process; using plant.id as random effect
- glmmLasso(fh ~ species + stem_sav + branching + start_temp + sample_wt + lfm,
+ glmmLasso(fh ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
  data=mem.df,
- rnd = list(species/plant_id=~1), 
+ rnd = list(plant_id=~1), 
  family = gaussian(link = "identity"),
  lambda = lambda[j],
  switch.NR = TRUE,
@@ -353,26 +361,36 @@ for (j in 1:length(BIC_vec)){
  y.hat<-predict(glm1,mem.df) 
  Devianz_ma[j]<-sum(family$dev.resids(mem.df$fh,y.hat,wt=rep(1,length(y.hat)))) } }
 
-# Best lamdas, based on different criteria
+# Best lamdbas, based on different criteria
 lambda[which.min(BIC_vec)]
-# 20.69138
-lambda[which.min(AIC_vec)]
-# 0.5455595
 fh_lambda_bic <- lambda[which.min(BIC_vec)]
+lambda[which.min(AIC_vec)]
 fh_lambda_aic <- lambda[which.min(AIC_vec)]
 ```
 
-### Model Selection
+#### g2) Model Selection
 ```{r}
-fh_lasso <- glmmLasso(fh ~ species + stem_sav + branching + start_temp + sample_wt + lfm,
+# AIC-based lambda
+fh_lasso_1 <- glmmLasso(fh ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
  data=mem.df,
  rnd = list(plant_id=~1), 
  family = gaussian(link = "identity"),
- lambda = fh_lambda_aic, # try both aic-based lambda and bic-based lambda
+ lambda = fh_lambda_aic,
  switch.NR = TRUE,
  final.re = TRUE)
 
-summary(fh_lasso)
+summary(fh_lasso_1)
+
+# BIC-based lambda
+fh_lasso_2 <- glmmLasso(fh ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = fh_lambda_bic,
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(fh_lasso_2)
 ```
 
 ## Flame Duration
@@ -438,8 +456,87 @@ fd.step_fix
 ```
 
 AIC
+direction = 'both' is not working with the random effect structure
 ```{r}
-stepcAIC(max.fh.mem_int, 'backward', groupCandidates = 'species/plant_id')
+stepcAIC(max.fd.mem_int, 'backward', groupCandidates = 'species/plant_id')
+```
+
+### g) LASSO
+I am unable to get the nested random effects structure to work for glmmLasso, so below the LASSO uses plant_id as the random effect on intercept rather than a nested species/plant_id as we are using in our primary model selection
+#### g1) Lambda Cross-validation 
+from https://davidabugaber.com/blog/f/find-the-optimal-mixed-model-for-your-data-with-glmmlasso
+```{r}
+#set lambdas... go from 10^-7 to 10^7, in 40 log steps
+lambda <- 10^seq(-7,7, length=40)
+ 
+#dummy vectors of model fit values for each lambda: BIC, AIC, prediction error
+BIC_vec <- rep(Inf, length(lambda))
+AIC_vec <- rep(Inf, length(lambda))
+Devianz_ma<-NULL
+Coeff_ma<-NULL
+ 
+family = gaussian(link = "identity")
+ 
+j<-1
+for (j in 1:length(BIC_vec)){
+ print(paste("Iteration ", j, sep=""))
+ 
+ glm1 <- try( #throwing main variables identified by the information criteria model selection into the LASSO cross-validation process; using plant.id as random effect
+ glmmLasso(fd ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = lambda[j],
+ switch.NR = TRUE,
+ final.re = TRUE), 
+ silent = TRUE)
+ 
+
+# code to make it continue anyway if an error occurs
+  if(class(glm1)!="try-error")
+ { 
+ 
+ #save BIC, AIC
+ BIC_vec[j]<-glm1$bic
+ AIC_vec[j]<-glm1$aic
+ 
+ #save coefficient outputs
+ Coeff_ma<-cbind(Coeff_ma,glm1$coefficients)
+ 
+ #save error (deviance) values
+ y.hat<-predict(glm1,mem.df) 
+ Devianz_ma[j]<-sum(family$dev.resids(mem.df$fd,y.hat,wt=rep(1,length(y.hat)))) } }
+
+# Best lamdbas, based on different criteria
+lambda[which.min(BIC_vec)]
+fd_lambda_bic <- lambda[which.min(BIC_vec)]
+lambda[which.min(AIC_vec)]
+fd_lambda_aic <- lambda[which.min(AIC_vec)]
+```
+
+#### g2) Model Selection
+```{r}
+# AIC-based lambda
+fd_lasso_1 <- glmmLasso(fd ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = fd_lambda_aic,
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(fd_lasso_1)
+
+# BIC-based lambda
+fd_lasso_2 <- glmmLasso(fd ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = fd_lambda_bic,
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(fd_lasso_2)
 ```
 
 ## Temp. Change
@@ -492,7 +589,8 @@ top.temp.mem.df <- main.temp.mem.df %>%
   filter(AIC < min(main.temp.mem.df$AIC) + 2)
 ```
 
-### f) Stepwise Selection
+### f) Stepwise Selections
+P-values
 ```{r}
 # Maximal Model (all first-order interaction terms)
 max.temp.mem_int <- lmer(temp_change ~ lfm*LMA + lfm*sample_wt + lfm*leaf_mass_ratio + lfm*branching + lfm*mpa + lfm*start_temp + lfm*dmc + lfm*branch_volume + lfm*stem_sav + lfm*leaf_sav + lfm*thickness + LMA*sample_wt + LMA*leaf_mass_ratio + LMA*branching + LMA*mpa + LMA*start_temp + LMA*dmc + LMA*branch_volume + LMA*stem_sav + LMA*leaf_sav + LMA*thickness + sample_wt*leaf_mass_ratio + sample_wt*branching + sample_wt*mpa + sample_wt*start_temp + sample_wt*dmc + sample_wt*branch_volume + sample_wt*stem_sav + sample_wt*leaf_sav + sample_wt*thickness + leaf_mass_ratio*branching + leaf_mass_ratio*mpa + leaf_mass_ratio*start_temp + leaf_mass_ratio*dmc + leaf_mass_ratio*branch_volume + leaf_mass_ratio*stem_sav + leaf_mass_ratio*leaf_sav + leaf_mass_ratio*thickness + branching*mpa + branching*start_temp + branching*dmc + branching*branch_volume + branching*stem_sav + branching*leaf_sav + branching*thickness + mpa*start_temp + mpa*dmc + mpa*branch_volume + mpa*stem_sav + mpa*leaf_sav + mpa*thickness + start_temp*dmc + start_temp*branch_volume + start_temp*stem_sav + start_temp*leaf_sav + start_temp*thickness + dmc*branch_volume + dmc*stem_sav + dmc*leaf_sav + dmc*thickness + branch_volume*stem_sav + branch_volume*leaf_sav + branch_volume*thickness + stem_sav*leaf_sav + stem_sav*thickness + leaf_sav*thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness + (1|species/plant_id), mem.df, REML = T)
@@ -505,6 +603,92 @@ max.temp.mem_fix <- lmer(temp_change ~ lfm + LMA + sample_wt + leaf_mass_ratio +
 
 temp.step_fix <- step(max.temp.mem_fix, direction = 'both', ddf = 'Kenward-Roger', reduce.random = F)
 temp.step_fix
+```
+
+AIC
+direction = 'both' is not working with the random effect structure
+```{r}
+stepcAIC(max.temp.mem_int, 'backward', groupCandidates = 'species/plant_id')
+```
+
+### g) LASSO
+I am unable to get the nested random effects structure to work for glmmLasso, so below the LASSO uses plant_id as the random effect on intercept rather than a nested species/plant_id as we are using in our primary model selection
+#### g1) Lambda Cross-validation 
+from https://davidabugaber.com/blog/f/find-the-optimal-mixed-model-for-your-data-with-glmmlasso
+```{r}
+#this loop takes much longer to run because there's more random intercepts
+
+#set lambdas... go from 10^-7 to 10^7, in 40 log steps (might take a while)
+lambda <- 10^seq(-7,7, length=40)
+ 
+#dummy vectors of model fit values for each lambda: BIC, AIC, prediction error
+BIC_vec <- rep(Inf, length(lambda))
+AIC_vec <- rep(Inf, length(lambda))
+Devianz_ma<-NULL
+Coeff_ma<-NULL
+ 
+family = gaussian(link = "identity")
+ 
+j<-1
+for (j in 1:length(BIC_vec)){
+ print(paste("Iteration ", j, sep=""))
+ 
+ glm1 <- try( #throwing main variables identified by the information criteria model selection into the LASSO cross-validation process; using plant.id as random effect
+ glmmLasso(temp_change ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = lambda[j],
+ switch.NR = TRUE,
+ final.re = TRUE), 
+ silent = TRUE)
+ 
+
+# code to make it continue anyway if an error occurs
+  if(class(glm1)!="try-error")
+ { 
+ 
+ #save BIC, AIC
+ BIC_vec[j]<-glm1$bic
+ AIC_vec[j]<-glm1$aic
+ 
+ #save coefficient outputs
+ Coeff_ma<-cbind(Coeff_ma,glm1$coefficients)
+ 
+ #save error (deviance) values
+ y.hat<-predict(glm1,mem.df) 
+ Devianz_ma[j]<-sum(family$dev.resids(mem.df$temp,y.hat,wt=rep(1,length(y.hat)))) } }
+
+# Best lamdbas, based on different criteria
+lambda[which.min(BIC_vec)]
+temp_lambda_bic <- lambda[which.min(BIC_vec)]
+lambda[which.min(AIC_vec)]
+temp_lambda_aic <- lambda[which.min(AIC_vec)]
+```
+
+#### g2) Model Selection
+```{r}
+# AIC-based lambda
+temp_lasso_1 <- glmmLasso(temp_change ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = temp_lambda_aic,
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(temp_lasso_1)
+
+# BIC-based lambda
+temp_lasso_2 <- glmmLasso(temp_change ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = temp_lambda_bic,
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(temp_lasso_2)
 ```
 
 ## Heat Flux Change
@@ -553,7 +737,8 @@ top.hf.mem.df <- main.hf.mem.df %>%
   filter(AIC < min(main.hf.mem.df$AIC) + 2)
 ```
 
-### f) Stepwise Selection
+### f) Stepwise Selections
+P-values
 ```{r}
 # Maximal Model (all first-order interaction terms)
 max.hf.mem_int <- lmer(heat_flux_change ~ lfm*LMA + lfm*sample_wt + lfm*leaf_mass_ratio + lfm*branching + lfm*mpa + lfm*start_temp + lfm*dmc + lfm*branch_volume + lfm*stem_sav + lfm*leaf_sav + lfm*thickness + LMA*sample_wt + LMA*leaf_mass_ratio + LMA*branching + LMA*mpa + LMA*start_temp + LMA*dmc + LMA*branch_volume + LMA*stem_sav + LMA*leaf_sav + LMA*thickness + sample_wt*leaf_mass_ratio + sample_wt*branching + sample_wt*mpa + sample_wt*start_temp + sample_wt*dmc + sample_wt*branch_volume + sample_wt*stem_sav + sample_wt*leaf_sav + sample_wt*thickness + leaf_mass_ratio*branching + leaf_mass_ratio*mpa + leaf_mass_ratio*start_temp + leaf_mass_ratio*dmc + leaf_mass_ratio*branch_volume + leaf_mass_ratio*stem_sav + leaf_mass_ratio*leaf_sav + leaf_mass_ratio*thickness + branching*mpa + branching*start_temp + branching*dmc + branching*branch_volume + branching*stem_sav + branching*leaf_sav + branching*thickness + mpa*start_temp + mpa*dmc + mpa*branch_volume + mpa*stem_sav + mpa*leaf_sav + mpa*thickness + start_temp*dmc + start_temp*branch_volume + start_temp*stem_sav + start_temp*leaf_sav + start_temp*thickness + dmc*branch_volume + dmc*stem_sav + dmc*leaf_sav + dmc*thickness + branch_volume*stem_sav + branch_volume*leaf_sav + branch_volume*thickness + stem_sav*leaf_sav + stem_sav*thickness + leaf_sav*thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness + (1|species/plant_id), mem.df, REML = T)
@@ -566,6 +751,90 @@ max.hf.mem_fix <- lmer(heat_flux_change ~ lfm + LMA + sample_wt + leaf_mass_rati
 
 hf.step_fix <- step(max.hf.mem_fix, direction = 'both', ddf = 'Kenward-Roger', reduce.random = F)
 hf.step_fix
+```
+
+AIC
+direction = 'both' is not working with the random effect structure
+```{r}
+stepcAIC(max.hf.mem_int, 'backward', groupCandidates = 'species/plant_id')
+```
+
+### g) LASSO
+I am unable to get the nested random effects structure to work for glmmLasso, so below the LASSO uses plant_id as the random effect on intercept rather than a nested species/plant_id as we are using in our primary model selection
+#### g1) Lambda Cross-validation 
+from https://davidabugaber.com/blog/f/find-the-optimal-mixed-model-for-your-data-with-glmmlasso
+```{r}
+#set lambdas... go from 10^-7 to 10^7, in 40 log steps
+lambda <- 10^seq(-7,7, length=40)
+ 
+#dummy vectors of model fit values for each lambda: BIC, AIC, prediction error
+BIC_vec <- rep(Inf, length(lambda))
+AIC_vec <- rep(Inf, length(lambda))
+Devianz_ma<-NULL
+Coeff_ma<-NULL
+ 
+family = gaussian(link = "identity")
+ 
+j<-1
+for (j in 1:length(BIC_vec)){
+ print(paste("Iteration ", j, sep=""))
+ 
+ glm1 <- try( #throwing main variables identified by the information criteria model selection into the LASSO cross-validation process; using plant.id as random effect
+ glmmLasso(heat_flux_change ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = lambda[j],
+ switch.NR = TRUE,
+ final.re = TRUE), 
+ silent = TRUE)
+ 
+
+# code to make it continue anyway if an error occurs
+  if(class(glm1)!="try-error")
+ { 
+ 
+ #save BIC, AIC
+ BIC_vec[j]<-glm1$bic
+ AIC_vec[j]<-glm1$aic
+ 
+ #save coefficient outputs
+ Coeff_ma<-cbind(Coeff_ma,glm1$coefficients)
+ 
+ #save error (deviance) values
+ y.hat<-predict(glm1,mem.df) 
+ Devianz_ma[j]<-sum(family$dev.resids(mem.df$hf,y.hat,wt=rep(1,length(y.hat)))) } }
+
+# Best lamdbas, based on different criteria
+lambda[which.min(BIC_vec)]
+hf_lambda_bic <- lambda[which.min(BIC_vec)]
+lambda[which.min(AIC_vec)]
+hf_lambda_aic <- lambda[which.min(AIC_vec)]
+```
+
+#### g2) Model Selection
+```{r}
+# AIC-based lambda
+hf_lasso_1 <- glmmLasso(heat_flux_change ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = hf_lambda_aic,
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(hf_lasso_1)
+
+# BIC-based lambda
+hf_lasso_2 <- glmmLasso(heat_flux_change ~ lfm:LMA + lfm:sample_wt + lfm:leaf_mass_ratio + lfm:branching + lfm:mpa + lfm:start_temp + lfm:dmc + lfm:branch_volume + lfm:stem_sav + lfm:leaf_sav + lfm:thickness + LMA:sample_wt + LMA:leaf_mass_ratio + LMA:branching + LMA:mpa + LMA:start_temp + LMA:dmc + LMA:branch_volume + LMA:stem_sav + LMA:leaf_sav + LMA:thickness + sample_wt:leaf_mass_ratio + sample_wt:branching + sample_wt:mpa + sample_wt:start_temp + sample_wt:dmc + sample_wt:branch_volume + sample_wt:stem_sav + sample_wt:leaf_sav + sample_wt:thickness + leaf_mass_ratio:branching + leaf_mass_ratio:mpa + leaf_mass_ratio:start_temp + leaf_mass_ratio:dmc + leaf_mass_ratio:branch_volume + leaf_mass_ratio:stem_sav + leaf_mass_ratio:leaf_sav + leaf_mass_ratio:thickness + branching:mpa + branching:start_temp + branching:dmc + branching:branch_volume + branching:stem_sav + branching:leaf_sav + branching:thickness + mpa:start_temp + mpa:dmc + mpa:branch_volume + mpa:stem_sav + mpa:leaf_sav + mpa:thickness + start_temp:dmc + start_temp:branch_volume + start_temp:stem_sav + start_temp:leaf_sav + start_temp:thickness + dmc:branch_volume + dmc:stem_sav + dmc:leaf_sav + dmc:thickness + branch_volume:stem_sav + branch_volume:leaf_sav + branch_volume:thickness + stem_sav:leaf_sav + stem_sav:thickness + leaf_sav:thickness + lfm + LMA + sample_wt + leaf_mass_ratio + branching + mpa + start_temp + dmc + branch_volume + stem_sav + leaf_sav + thickness,
+ data=mem.df,
+ rnd = list(plant_id=~1), 
+ family = gaussian(link = "identity"),
+ lambda = hf_lambda_bic,
+ switch.NR = TRUE,
+ final.re = TRUE)
+
+summary(hf_lasso_2)
 ```
 
 ## Ignitions (GLMM Selection)
