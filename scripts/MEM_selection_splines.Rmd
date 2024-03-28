@@ -250,30 +250,32 @@ inprogress.data <- data.frame(sample_wt = as.vector(woo$sample_wt), fh = as.vect
 
 inprogress.data2 <- data.frame(sample_wt = as.vector(woo$sample_wt), fh = as.vector(woo$fh), fd = as.vector(woo$fd), lfm = as.vector(woo$lfm), branching = 0.4, dmc = as.vector(woo$dmc), branch_volume = as.vector(woo$branch_volume), species = as.factor(woo$species)) %>% 
   mutate(log_sw = 2)
-
+```
+```{r}
 mod1 <- gam(fh ~ s(lfm) + log_sw, se = T, data = inprogress.data)
 summary(mod1)
 plot(mod1, se = T)
+```
 
-
-
+```{r}
 mod2 <- gamm(fd ~ s(branching) + s(lfm, by = species) + log_sw, data = inprogress.data)
 summary(mod2$gam)
 plot(mod2$gam, se = T, scheme = 2)
+```
 
-
-
+```{r}
 mod3 <- gamm(log(fd) ~ s(branching) + lfm*species + log_sw*species, data = inprogress.data)
 summary(mod3$gam)
 plot(mod3$gam, se = T, scheme = 2)
+```
 
+```{r}
 inprogress.data$predicted.fd <- predict.gam(mod3$gam, newdata = inprogress.data2)
 
 inprogress.data %>% 
   ggplot(aes(x = lfm, y = predicted.fd, color = species)) +
     geom_point()
 ```
-
 
 
 

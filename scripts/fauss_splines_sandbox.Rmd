@@ -1,0 +1,143 @@
+---
+title: 'Sandbox for Exploring GAM Models and Splines'
+author: "Kristina Fauss"
+date: "2024-03-28"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(here)
+library(lmerTest)
+library(cAIC4)
+library(mgcv)
+here = here::here
+source(here("scripts", "source_code.R"))
+
+source(here('scripts', 'mem.selection.function.R')) #this is where all functions for the MEM and GLMM selections are written
+```
+
+
+```{r}
+flamm.df %>% 
+  summarise(sw = mean(sample_wt), sw.sd = sd(sample_wt))
+
+# Grouping by plant_id; to check to see which traits do not have any variation per plant_id
+trait.summary.plant_id <- flamm.df %>%  
+  unite('plant_id', c(species, plant), sep = '_', remove = F) %>% 
+  select(fh, species, lfm, leaf_lfm, stem_lfm, mpa, ww_flam_sample, dw_flam_sample, LMA, SLA, thickness, leaf_area, branching, stem_mass_ratio, leaf_mass_ratio, sample_wt, start_temp, branch_volume, branch_height, sample_density, ambient_humidity, ambient_temp, thermocoupler_height, hotplate_height, plant_id) %>% 
+  mutate(lfm = scale(lfm), mpa = scale(mpa), ww_flam_sample = scale(ww_flam_sample),
+         dw_flam_sample = scale(dw_flam_sample), LMA = scale(LMA), thickness = scale(thickness),
+         leaf_area = scale(leaf_area), branching = scale(branching),
+         leaf_mass_ratio = scale(leaf_mass_ratio), sample_wt = scale(sample_wt),
+         start_temp = scale(start_temp), branch_volume = scale(branch_volume),
+         sample_density = scale(sample_density), branch_height = scale(branch_height)) %>%  # scaling traits we want to look at so that standard deviations are comparable
+  group_by(plant_id) %>% 
+  dplyr::summarise(sd_lfm = sd(lfm), sd_mpa = sd(mpa), sd_ww = sd(ww_flam_sample), sd_dw = sd(dw_flam_sample),
+                   sd_lma = sd(LMA), sd_thickness = sd(thickness), sd_leafarea = sd(leaf_area),
+                   sd_branching = sd(branching), sd_leafratio = sd(leaf_mass_ratio), sd_sw = sd(sample_wt),
+                   sd_st = sd(start_temp), sd_volume = sd(branch_volume),
+                   sd_density = sd(sample_density), sd_bh = sd(branch_height))
+trait.summary.plant_id %>% 
+  mutate(sd_lfm = ifelse(is.na(sd_lfm), 0, sd_lfm),
+         sd_mpa = ifelse(is.na(sd_mpa), 0, sd_mpa),
+         sd_ww = ifelse(is.na(sd_ww), 0, sd_ww),
+         sd_dw = ifelse(is.na(sd_dw), 0, sd_dw),
+         sd_lma = ifelse(is.na(sd_lma), 0, sd_lma),
+         sd_thickness = ifelse(is.na(sd_thickness), 0, sd_thickness),
+         sd_leafarea = ifelse(is.na(sd_leafarea), 0, sd_leafarea),
+         sd_branching = ifelse(is.na(sd_branching), 0, sd_branching),
+         sd_leafratio = ifelse(is.na(sd_leafratio), 0, sd_leafratio),
+         sd_sw = ifelse(is.na(sd_sw), 0, sd_sw),
+         sd_st = ifelse(is.na(sd_st), 0, sd_st), 
+         sd_volume = ifelse(is.na(sd_volume), 0, sd_volume),
+         sd_density = ifelse(is.na(sd_density), 0, sd_density),
+         sd_bh = ifelse(is.na(sd_bh), 0, sd_bh)) %>% 
+  summary()
+
+# Grouping by species; to check to see which traits do not have any intraspecific variation
+trait.summary.species <- flamm.df %>%  # scaling so that standard deviations are comparable
+  select(fh, species, lfm, leaf_lfm, stem_lfm, mpa, ww_flam_sample, dw_flam_sample, LMA, SLA, thickness, leaf_area, branching, stem_mass_ratio, leaf_mass_ratio, sample_wt, start_temp, branch_volume, sample_density, ambient_humidity, ambient_temp, thermocoupler_height, hotplate_height) %>% 
+  mutate(lfm = scale(lfm), mpa = scale(mpa), ww_flam_sample = scale(ww_flam_sample),
+         dw_flam_sample = scale(dw_flam_sample), LMA = scale(LMA), thickness = scale(thickness),
+         leaf_area = scale(leaf_area), branching = scale(branching),
+         leaf_mass_ratio = scale(leaf_mass_ratio), sample_wt = scale(sample_wt),
+         start_temp = scale(start_temp), branch_volume = scale(branch_volume),
+         sample_density = scale(sample_density)) %>%  # scaling traits we want to look at so that standard deviations are comparable
+  group_by(species) %>% 
+  dplyr::summarise(sd_lfm = sd(lfm), sd_mpa = sd(mpa), sd_ww = sd(ww_flam_sample), sd_dw = sd(dw_flam_sample),
+                   sd_lma = sd(LMA), sd_thickness = sd(thickness), sd_leafarea = sd(leaf_area),
+                   sd_branching = sd(branching), sd_leafratio = sd(leaf_mass_ratio), sd_sw = sd(sample_wt),
+                   sd_st = sd(start_temp), sd_volume = sd(branch_volume),
+                   sd_density = sd(sample_density))
+trait.summary.species %>% 
+  mutate(sd_lfm = ifelse(is.na(sd_lfm), 0, sd_lfm),
+         sd_mpa = ifelse(is.na(sd_mpa), 0, sd_mpa),
+         sd_ww = ifelse(is.na(sd_ww), 0, sd_ww),
+         sd_dw = ifelse(is.na(sd_dw), 0, sd_dw),
+         sd_lma = ifelse(is.na(sd_lma), 0, sd_lma),
+         sd_thickness = ifelse(is.na(sd_thickness), 0, sd_thickness),
+         sd_leafarea = ifelse(is.na(sd_leafarea), 0, sd_leafarea),
+         sd_branching = ifelse(is.na(sd_branching), 0, sd_branching),
+         sd_leafratio = ifelse(is.na(sd_leafratio), 0, sd_leafratio),
+         sd_sw = ifelse(is.na(sd_sw), 0, sd_sw),
+         sd_st = ifelse(is.na(sd_st), 0, sd_st), 
+         sd_volume = ifelse(is.na(sd_volume), 0, sd_volume),
+         sd_density = ifelse(is.na(sd_density), 0, sd_density)) %>% 
+  summary()
+```
+
+# Initial Collinearity Check
+Because we have so many variables, we should look at a correlation matrix to determine which variables to include and which ones we could get rid of right away
+```{r}
+flamm.df <- flamm.df %>% 
+  drop_na(fh, fd, pfg, temp_change, heat_flux_change) # dropping any NA's for flam. metrics
+
+flamm.df %>% 
+  select(fh, fd, pfg, temp_change, heat_flux_change, species, lfm, leaf_lfm, stem_lfm, mpa, ww_flam_sample, dw_flam_sample, LMA, SLA, thickness, leaf_area, branching, stem_mass_ratio, leaf_mass_ratio, sample_wt, start_temp, branch_volume, sample_density, ambient_humidity, ambient_temp, branch_height, thermocoupler_height, hotplate_height, stem_sav, leaf_sav, stem_dmc, dmc, leaf_dmc, dw_sppdev) %>% 
+  ggcorr(label = T)
+```
+
+# in progress
+```{r}
+woo <- flamm.df %>% 
+  filter(ignition != '0') %>% 
+  filter(species != 'ARCDEN', species != 'HETARB') %>% 
+  unite('plant_id', c(species, plant), sep = '_', remove = F)
+
+inprogress.data <- data.frame(sample_wt = as.vector(woo$sample_wt), fh = as.vector(woo$fh), fd = as.vector(woo$fd), lfm = as.vector(woo$lfm), branching = as.vector(woo$branching), dmc = as.vector(woo$dmc), branch_volume = as.vector(woo$branch_volume), species = as.factor(woo$species)) %>% 
+  mutate(log_sw = log(sample_wt))
+
+inprogress.data2 <- data.frame(sample_wt = as.vector(woo$sample_wt), fh = as.vector(woo$fh), fd = as.vector(woo$fd), lfm = as.vector(woo$lfm), branching = 0.4, dmc = as.vector(woo$dmc), branch_volume = as.vector(woo$branch_volume), species = as.factor(woo$species)) %>% 
+  mutate(log_sw = 2)
+```
+```{r}
+mod1 <- gam(fh ~ s(lfm) + log_sw, se = T, data = inprogress.data)
+summary(mod1)
+plot(mod1, se = T)
+```
+
+```{r}
+mod2 <- gamm(fd ~ s(branching) + s(lfm, by = species) + log_sw, data = inprogress.data)
+summary(mod2$gam)
+plot(mod2$gam, se = T, scheme = 2)
+```
+
+```{r}
+mod3 <- gamm(log(fd) ~ s(branching) + lfm*species + log_sw*species, data = inprogress.data)
+summary(mod3$gam)
+plot(mod3$gam, se = T, scheme = 2)
+```
+
+```{r}
+inprogress.data$predicted.fd <- predict.gam(mod3$gam, newdata = inprogress.data2)
+
+inprogress.data %>% 
+  ggplot(aes(x = lfm, y = predicted.fd, color = species)) +
+    geom_point()
+```
+
+
+
