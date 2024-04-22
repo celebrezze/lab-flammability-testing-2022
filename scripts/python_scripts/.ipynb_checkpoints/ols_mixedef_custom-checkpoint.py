@@ -110,7 +110,7 @@ def formula_all_2way_interactions(cols, report=1, y='fh'):
     '''
     Returns just the maximal model for 2-way interactions - one formula including all 2-way interaction terms. (no singletons are inclus=ded bc all are accounted for in the interaction terms)
     '''
-    cols2= list(combinations(cols, 2))
+    cols2 = list(combinations(cols, 2))
     form = y+' ~ '
     for colset in cols2:
         form = form +colset[0]+'*'+colset[1]+' + '
@@ -255,12 +255,15 @@ def scale_and_center(df, datcolsall, cols_no_change=['cycle', 'doy', 'docy', 'cl
 #             print(round(row.AICscore,2), ': ', row.Formula)
 #     return (resdf, num_top_models)
 
-def compare_corr_predictors_ols(dfog, cols, yvar='fh'):
+
+
+
+def compare_predictors_mixedeff(dfog, cols, yvar='fh'):
     pvals = []
     coefs = []
     # compile coefs and pvals for each X col
     for col in cols:
-        res = linreg_check(dfog[col], dfog[yvar])
+        res = mixedeff_check(dfog, col, yvar)
         coef = res[0]
         pval = res[1]
         pvals.append(pval)
@@ -268,23 +271,49 @@ def compare_corr_predictors_ols(dfog, cols, yvar='fh'):
     df = pd.DataFrame({
         'cols':cols,
         'pvals':pvals,
-        'coefs':coefs
+        'coefs':coefs,
     })
+    df['significant']=df.pvals<0.05
     df = df.sort_values('pvals')
     print(df)
 
-def linreg_check(X, y):
+def mixedeff_check(df, col, yvar):
     '''
     Takes 1 predictor `X` and 1 outcome `y`. Performs OLS y = B0*X + B1. Prints model summary.
     '''
-    # Add a constant term to the independent variable matrix for statsmodels
-    X = sm.add_constant(X)
-    # Create and fit the OLS model
-    model_sm = sm.OLS(y, X).fit()
-    Xcoef = model_sm.params[1]
-    pval = model_sm.pvalues[1]
+    form = yvar+'~'+col
+    model = smf.mixedlm(form, data=df, groups=df["plant_id"])
+    results = model.fit(reml=False)
+    Xcoef = results.params[1]
+    pval = results.pvalues[1]
     return([Xcoef, pval])
 
+
+
+
+
+
+
+
+def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, probs=[], printsumm=0):
+    # list of cols pairs
+    cols2 = list(combinations(cols, 2))
+    
+    # compile formulas
+    intsinglesforms = [y+' ~ '+col2[0]+'*'+col2[1] for col2 in cols2]
+    
+    # remove problem formulas - singluar matrix
+    for probj in probs:
+        intsinglesforms.remove(probj)
+    
+    # print results
+    for formi in intsinglesforms:
+        model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
+        results = model.fit(reml=False)
+        if min(results.pvalues[3:-1]) < thresh:
+            print(formi)
+            if printsumm==1:
+                print(results.summary())
 
 
 
