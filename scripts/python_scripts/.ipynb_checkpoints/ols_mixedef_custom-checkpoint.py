@@ -14,6 +14,9 @@ from sklearn.model_selection import train_test_split
 from itertools import combinations, permutations
 from sklearn.preprocessing import StandardScaler
 
+import warnings
+warnings.filterwarnings("ignore")
+
 # -----------------------------------------------------------------
 # PLOTS
 def corrplot(gdf, cols_of_interest):
@@ -173,6 +176,8 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, form_cols, report=1, t
     '''
     scores = []
     for formula in formulas:
+        if report==1:
+            print(formula)
         # get model & fit
         model = smf.mixedlm(formula, data=df, groups=df[rand_eff])
         results = model.fit(reml=False)
@@ -250,7 +255,7 @@ def scale_and_center(df, datcolsall, cols_no_change=['cycle', 'doy', 'docy', 'cl
 #             print(round(row.AICscore,2), ': ', row.Formula)
 #     return (resdf, num_top_models)
 
-def compare_corr_predictors_ols(dfog, cols, yvar='gr_rate'):
+def compare_corr_predictors_ols(dfog, cols, yvar='fh'):
     pvals = []
     coefs = []
     # compile coefs and pvals for each X col
@@ -266,7 +271,7 @@ def compare_corr_predictors_ols(dfog, cols, yvar='gr_rate'):
         'coefs':coefs
     })
     df = df.sort_values('pvals')
-    print(df.head())
+    print(df)
 
 def linreg_check(X, y):
     '''
