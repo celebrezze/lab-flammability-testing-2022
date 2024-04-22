@@ -20,6 +20,7 @@ source(here('scripts', 'mem.selection.function.R')) #this is where all functions
 ```
 
 
+
 ```{r}
 flamm.df %>% 
   summarise(sw = mean(sample_wt), sw.sd = sd(sample_wt))

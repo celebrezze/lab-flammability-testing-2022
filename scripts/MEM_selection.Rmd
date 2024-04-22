@@ -18,6 +18,11 @@ source(here("scripts", "source_code.R"))
 source(here('scripts', 'mem.selection.function.R')) #this is where all functions for the MEM and GLMM selections are written
 ```
 
+```{r}
+expfolder = '/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables'
+write.csv(main.ig.glmm.df, "/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables/mainIGmem", row.names=FALSE)
+```
+
 # Data Structure
 
 For the linear mixed effects models, we are going to be using the *flammability metrics* below as **dependent variables**:
