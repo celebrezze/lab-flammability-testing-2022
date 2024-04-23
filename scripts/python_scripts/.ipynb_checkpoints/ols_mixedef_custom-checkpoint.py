@@ -300,7 +300,7 @@ def red_formulas_2way_interactions_and_singletons(cols_start, base_interactions,
     return formulas, colslist
 
 
-def one_int_any_singletons():
+def one_interaction_any_singletons():
     pass
 
 
