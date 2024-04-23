@@ -105,7 +105,16 @@ def plot_ols_coefficients(results):
 # -----------------------------------------------------------------
 # OLS
 
-# 2-way interactions chain
+def scale_and_center(df, datcolsall, cols_no_change=['cycle', 'doy', 'docy', 'cluster', 'csday1']):
+    scaler = StandardScaler()
+    scaled_data = scaler.fit_transform(df[datcolsall])
+    scaled_df = pd.DataFrame(scaled_data, columns=datcolsall)
+    
+    for col in cols_no_change:
+        scaled_df[col] = df[col]
+    
+    return(scaled_df)
+
 def formula_all_2way_interactions(cols, report=1, y='fh'):
     '''
     Returns just the maximal model for 2-way interactions - one formula including all 2-way interaction terms. (no singletons are inclus=ded bc all are accounted for in the interaction terms)
@@ -119,9 +128,80 @@ def formula_all_2way_interactions(cols, report=1, y='fh'):
         print(form)
     return(form)
 
+def compare_predictors_mixedeff(dfog, cols, yvar='fh'):
+    pvals = []
+    coefs = []
+    # compile coefs and pvals for each X col
+    for col in cols:
+        res = mixedeff_check(dfog, col, yvar)
+        coef = res[0]
+        pval = res[1]
+        pvals.append(pval)
+        coefs.append(coef)
+    df = pd.DataFrame({
+        'cols':cols,
+        'pvals':pvals,
+        'coefs':coefs,
+    })
+    df['significant']=df.pvals<0.05
+    df = df.sort_values('pvals')
+    print(df)
+
+def mixedeff_check(df, col, yvar):
+    '''
+    Takes 1 predictor `X` and 1 outcome `y`. Performs OLS y = B0*X + B1. Prints model summary.
+    '''
+    form = yvar+'~'+col
+    model = smf.mixedlm(form, data=df, groups=df["plant_id"])
+    results = model.fit(reml=False)
+    Xcoef = results.params[1]
+    pval = results.pvalues[1]
+    return([Xcoef, pval])
+
+
+def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, probs=[], printsumm=0):
+    
+    cols_that_were_sig = []
+    sig_interactions = []
+    
+    # list of cols pairs
+    cols2 = list(combinations(cols, 2))
+    
+    for col2 in cols2:
+        
+        # compile formula
+        int_term = col2[0]+'*'+col2[1]
+        formi = y+' ~ '+int_term
+
+        # check if its a problem
+        if formi in probs:
+            pass
+            
+        # run model
+        else:
+            model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
+            results = model.fit(reml=False)
+            if min(results.pvalues[3:-1]) < thresh:
+                print(formi)
+                cols_that_were_sig.append(col2[0])
+                cols_that_were_sig.append(col2[1])
+                sig_interactions.append(int_term)
+                if printsumm==1:
+                    print(results.summary())
+                
+    sigcols = set(cols_that_were_sig)
+    print(len(cols), len(sigcols), sigcols)
+    return sig_interactions
+
+
+
+# GENERATE LISTS OF FORMULAS TO COMPARE
+
+# Method given list of cols to use
 def all_formulas_2way_interactions_and_singletons(cols_start, y='fh', report=1):
     '''
-    Return a list of all possible formulas built from all possible combinations of 2 way interaction terma and singletons which are not present in the interaction terms, including no singletons.
+    Given a list of possible variables: 
+    Return a list of all possible formulas built from all possible combinations of 2 way interaction terms and singletons which are not present in the interaction terms, including no singletons.
     '''
     formulas = []
     colslist = []
@@ -170,6 +250,62 @@ def all_formulas_2way_interactions_and_singletons(cols_start, y='fh', report=1):
                         print(list(set(columns_used)))
     return formulas, colslist
 
+# Method given list of interactions and list of all other singletons
+def red_formulas_2way_interactions_and_singletons(cols_start, base_interactions, y='fh', report=1):
+    '''
+    Given a list of known interaction terms and all variables: 
+    Return a list of all possible formulas built from A LIST OF all possible combinations of 2 way interaction terms and singletons which are not present in the interaction terms, including no singletons.
+    '''
+    formulas = []
+    colslist = []
+    
+    # all possible combinations of interactions from 1 to n possible interactions
+    interaction_combos = [list(combinations(base_interactions, n)) for n in range(1, len(base_interactions)+1)]
+            
+    # assemble basis for formulas
+    for combo_interact in interaction_combos:
+        if report==1:
+            print('************** interaction combo i *****************')
+        # print(combo_interact)
+        for x in combo_interact:
+            x = list(x)
+            # need to add in every possible combo of singles not already accounted for in the interaction
+            cols_in_x = list(set(list(chain(*[list(t) for t in x]))))
+            cols_not_in_x = [item for item in cols_start if item not in cols_in_x]
+            singles_combos = [list(combinations(cols_not_in_x, n)) for n in range(0, len(cols_not_in_x)+1)]
+            # add in singles
+            for combo_sing in singles_combos:
+                for s in combo_sing:
+                    columns_used = cols_in_x
+                    form_base = x + list(s)
+                    if report==1:
+                        print(form_base)
+                    # assemble formulas
+                    form = y + ' ~ '
+                    for i in range(len(form_base)):
+                        term = form_base[i]
+                        if len(term)==2:
+                            form = form + term[0] +'*'+ term[1] + ' + '
+                            columns_used.append(term[0])
+                            columns_used.append(term[0])
+                        else:
+                            form = form + term + ' + '
+                            columns_used.append(term)
+                    formulas.append(form[:-2])
+                    colslist.append(list(set(columns_used)))
+                    # report
+                    if report==1:
+                        print(form[:-2])
+                        print(list(set(columns_used)))
+    return formulas, colslist
+
+
+def one_int_any_singletons():
+    pass
+
+
+
+# AIC ITERATION
 def AICscore_from_all_pos_2way_interactions(df, formulas, form_cols, report=1, thresh=2, rand_eff="plant_id"):
     '''
     Takes a list of formulas and a dataframe and returns a results dataframe of AIC scores, formulas, and columns used.
@@ -195,133 +331,5 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, form_cols, report=1, t
         for i,row in resdf[resdf.AICscore<resdf.AICscore.min()+thresh].iterrows():
             print(round(row.AICscore,2), ': ', row.Formula)
     return (resdf, num_top_models)
-
-
-def scale_and_center(df, datcolsall, cols_no_change=['cycle', 'doy', 'docy', 'cluster', 'csday1']):
-    scaler = StandardScaler()
-    scaled_data = scaler.fit_transform(df[datcolsall])
-    scaled_df = pd.DataFrame(scaled_data, columns=datcolsall)
-    
-    for col in cols_no_change:
-        scaled_df[col] = df[col]
-    
-    return(scaled_df)
-
-# 2-way interactions chain
-
-# def all_poss_2way_interactions(cols, report=1):
-#     '''
-#     USES: formula_all_2way_interactions()
-#     Takes list of cols to be tested, returns list of all possible 2-way interactions that can be made from those columns, from 1 interaction and up.
-#     '''
-#     # all possible combinations for interactions 2->all cols
-#     combinations_2_or_more = []
-#     for r in range(2, len(cols) + 1):
-#         combinations_2_or_more.extend(combinations(cols, r))
-#     if report==1:
-#         print(combinations_2_or_more)
-#     return(combinations_2_or_more)
-# def AICselect_from_all_pos_2way_interactions(df, cols_start, report=1):
-#     '''
-#     USES: all_poss_2way_interactions()
-#     Returns df of AIC scores & formulas for all possible 2-way interaction models
-#     '''
-#     # get all possible 2-way interaction combos
-#     combos = all_poss_2way_interactions(cols_start, report=0)
-#     # lists to store results
-#     formulas =[]
-#     form_cols = []
-#     scores = []
-#     # test all possible combos of 2-way interactions
-#     for cols in combos:
-#         # get formula
-#         formula = formula_all_2way_interactions(cols, report=0)
-#         # get model & fit
-#         model = smf.ols(formula, data=df)
-#         results = model.fit()
-#         # store score and formula
-#         scores.append(results.aic)
-#         formulas.append(formula)
-#         form_cols.append(cols)
-#     # report best scores and formula
-#     resdf = pd.DataFrame({
-#         'AICscore':scores,
-#         'Formula':formulas,
-#         'form_cols':form_cols
-#     }).sort_values(by='AICscore').reset_index(drop=True)
-#     num_top_models = len(resdf[resdf.AICscore<resdf.AICscore.min()+2])
-#     if report==1:
-#         for i,row in resdf[resdf.AICscore<resdf.AICscore.min()+2].iterrows():
-#             print(round(row.AICscore,2), ': ', row.Formula)
-#     return (resdf, num_top_models)
-
-
-
-
-def compare_predictors_mixedeff(dfog, cols, yvar='fh'):
-    pvals = []
-    coefs = []
-    # compile coefs and pvals for each X col
-    for col in cols:
-        res = mixedeff_check(dfog, col, yvar)
-        coef = res[0]
-        pval = res[1]
-        pvals.append(pval)
-        coefs.append(coef)
-    df = pd.DataFrame({
-        'cols':cols,
-        'pvals':pvals,
-        'coefs':coefs,
-    })
-    df['significant']=df.pvals<0.05
-    df = df.sort_values('pvals')
-    print(df)
-
-def mixedeff_check(df, col, yvar):
-    '''
-    Takes 1 predictor `X` and 1 outcome `y`. Performs OLS y = B0*X + B1. Prints model summary.
-    '''
-    form = yvar+'~'+col
-    model = smf.mixedlm(form, data=df, groups=df["plant_id"])
-    results = model.fit(reml=False)
-    Xcoef = results.params[1]
-    pval = results.pvalues[1]
-    return([Xcoef, pval])
-
-
-
-
-
-
-
-
-def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, probs=[], printsumm=0):
-    # list of cols pairs
-    cols2 = list(combinations(cols, 2))
-    
-    # compile formulas
-    intsinglesforms = [y+' ~ '+col2[0]+'*'+col2[1] for col2 in cols2]
-    
-    # remove problem formulas - singluar matrix
-    for probj in probs:
-        intsinglesforms.remove(probj)
-    
-    # print results
-    for formi in intsinglesforms:
-        model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
-        results = model.fit(reml=False)
-        if min(results.pvalues[3:-1]) < thresh:
-            print(formi)
-            if printsumm==1:
-                print(results.summary())
-
-
-
-
-
-
-
-
-
 
 
