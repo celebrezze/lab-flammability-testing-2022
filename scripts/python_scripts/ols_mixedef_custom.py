@@ -172,13 +172,15 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, pro
         # compile formula
         int_term = col2[0]+'*'+col2[1]
         formi = y+' ~ '+int_term
-        print(formi)
+        #print(formi)
         # check if its a problem
         if formi in probs:
             pass
             
         # run model
         else:
+            if printsumm==1:
+                print(formi)
             model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
             results = model.fit(reml=False)
             if min(results.pvalues[3:-1]) < thresh:
