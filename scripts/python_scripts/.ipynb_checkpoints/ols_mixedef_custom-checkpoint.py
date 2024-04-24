@@ -181,14 +181,17 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, pro
         else:
             if printsumm==1:
                 print(formi)
-            model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
-            results = model.fit(reml=False)
-            if min(results.pvalues[3:-1]) < thresh:
-                cols_that_were_sig.append(col2[0])
-                cols_that_were_sig.append(col2[1])
-                sig_interactions.append(int_term)
-                if printsumm==1:
-                    print(results.summary())
+            try:
+                model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
+                results = model.fit(reml=False)
+                if min(results.pvalues[3:-1]) < thresh:
+                    cols_that_were_sig.append(col2[0])
+                    cols_that_were_sig.append(col2[1])
+                    sig_interactions.append(int_term)
+                    if printsumm==1:
+                        print(results.summary())
+            except Exception as e:
+                print("ERROR: Formula model error:", formi)
                 
     sigcols = set(cols_that_were_sig)
     print(len(cols), len(sigcols), sigcols)
@@ -312,20 +315,25 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, report=1, thresh=2, ra
     Takes a list of formulas and a dataframe and returns a results dataframe of AIC scores, formulas, and columns used.
     '''
     scores = []
+    formulas_return = []
     for formula in formulas:
         if report==1:
             print(formula)
-        # get model & fit
-        model = smf.mixedlm(formula, data=df, groups=df[rand_eff])
-        results = model.fit(reml=False)
-        # store score and formula
-        scores.append(results.aic)
+        try:
+            # get model & fit
+            model = smf.mixedlm(formula, data=df, groups=df[rand_eff])
+            results = model.fit(reml=False)
+            # store score and formula
+            scores.append(results.aic)
+            formulas_return.append(formula)
+        except Exception as e:
+                print("ERROR: Formula model error:", formula)
     
     # report best scores and formula
     print(len(scores), len(formulas))
     resdf = pd.DataFrame({
             'AICscore':scores,
-            'Formula':formulas
+            'Formula':formulas_return
         }).sort_values(by='AICscore').reset_index(drop=True)
     num_top_models = len(resdf[resdf.AICscore<resdf.AICscore.min()+thresh])
     if report==1:
