@@ -172,7 +172,7 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, pro
         # compile formula
         int_term = col2[0]+'*'+col2[1]
         formi = y+' ~ '+int_term
-
+        print(formi)
         # check if its a problem
         if formi in probs:
             pass
@@ -182,7 +182,6 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, pro
             model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
             results = model.fit(reml=False)
             if min(results.pvalues[3:-1]) < thresh:
-                print(formi)
                 cols_that_were_sig.append(col2[0])
                 cols_that_were_sig.append(col2[1])
                 sig_interactions.append(int_term)
@@ -306,7 +305,7 @@ def one_interaction_any_singletons():
 
 
 # AIC ITERATION
-def AICscore_from_all_pos_2way_interactions(df, formulas, form_cols, report=1, thresh=2, rand_eff="plant_id"):
+def AICscore_from_all_pos_2way_interactions(df, formulas, report=1, thresh=2, rand_eff="plant_id"):
     '''
     Takes a list of formulas and a dataframe and returns a results dataframe of AIC scores, formulas, and columns used.
     '''
@@ -321,10 +320,10 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, form_cols, report=1, t
         scores.append(results.aic)
     
     # report best scores and formula
+    print(len(scores), len(formulas))
     resdf = pd.DataFrame({
             'AICscore':scores,
-            'Formula':formulas,
-            'form_cols':form_cols
+            'Formula':formulas
         }).sort_values(by='AICscore').reset_index(drop=True)
     num_top_models = len(resdf[resdf.AICscore<resdf.AICscore.min()+thresh])
     if report==1:
