@@ -439,8 +439,8 @@ def AIC_iterator(flam, cols_use, Y_VAR='fh',
     print('\n')
     for idx,row in resdf_fh[0:num_top_models].iterrows():
         formula = row.Formula
-        model = smf.ols(formula, data=df)
-        results = model.fit()
+        model = smf.mixedlm(formula, data=df, groups=df[rand_eff_AIC])
+        results = model.fit(reml=False)
         print(results.summary())
         plot_ols_coefficients(results)
         plt.show();
