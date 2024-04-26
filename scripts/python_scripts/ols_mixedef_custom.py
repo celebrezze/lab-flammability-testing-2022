@@ -194,7 +194,8 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, pro
                 print("ERROR: Formula model error:", formi)
                 
     sigcols = set(cols_that_were_sig)
-    print(len(cols), len(sigcols), sigcols)
+    print('\nColumns present in sig. interaction terms:', sigcols)
+    print('\nTotal Num. Cols : Num. Sig. Int. Cols; ', len(cols), ':', len(sigcols))
     return sig_interactions
 
 
@@ -310,7 +311,7 @@ def one_interaction_any_singletons():
 
 
 # AIC ITERATION
-def AICscore_from_all_pos_2way_interactions(df, formulas, report=1, thresh=2, rand_eff="plant_id"):
+def AICscore_from_all_pos_2way_interactions(df, formulas, report=0, thresh=2, rand_eff="plant_id"):
     '''
     Takes a list of formulas and a dataframe and returns a results dataframe of AIC scores, formulas, and columns used.
     '''
@@ -330,7 +331,7 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, report=1, thresh=2, ra
                 print("ERROR: Formula model error:", formula)
     
     # report best scores and formula
-    print(len(scores), len(formulas))
+    # print(len(scores), len(formulas))
     resdf = pd.DataFrame({
             'AICscore':scores,
             'Formula':formulas_return
@@ -340,5 +341,114 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, report=1, thresh=2, ra
         for i,row in resdf[resdf.AICscore<resdf.AICscore.min()+thresh].iterrows():
             print(round(row.AICscore,2), ': ', row.Formula)
     return (resdf, num_top_models)
+
+
+# FULL ITERATOR PROGRAM
+def AIC_iterator(flam, cols_use, Y_VAR='fh',
+                 minnumsingle=1, maxnumsingle=2, minnumint=0, maxnumint=1,
+                 thresh_int=0.05, probs_interaction_forms=[], printsummint=0, #compare_predictors_interaction_singletons
+                 report_AIC=0, thresh_AIC=2, rand_eff_AIC="plant_id" #AICscore_from_all_pos_2way_interactions
+                ):
+    '''
+    Accepts dataframe and list of columns - from that list of columns it makes all possible formulas with the specified range of interaction and single terms. For interactions it only includes interactions determined to be significant in single testing. It includes all possible single terms regardles of standalone significance.
+    '''
+    
+    # INTERACTIONS
+    # significant singleton interactions: y = b + m1x1 + m2x2 + m3x1x2
+    sig_interactions = compare_predictors_interaction_singletons(flam, cols_use, y=Y_VAR, thresh=thresh_int, probs = probs_interaction_forms, printsumm=printsummint)
+    # get list of tuples for interaction terms
+    int_tuple_list = [tuple(x.split('*')) for x in sig_interactions]
+    print('\nSignificant Interactions:')
+    for pair in int_tuple_list:
+        print(pair)
+
+    # LIST OF FORMULAS
+    df = flam
+    cols = cols_use
+    dv = Y_VAR
+    
+    formulas = []
+    cols_used = []
+
+    # BASE INTERACTIONS
+    # all possible combinations of interactions from min to max
+    intscombos = [list(combinations(int_tuple_list, n)) for n in range(minnumint, maxnumint+1)]
+
+    # build form base starting with interaction terms
+    for intcomboset in intscombos:
+        for intcombo in intcomboset:
+            # track cols used in interactions to drop from singletons later
+            colsusedint = []
+            # no interactions
+            if len(intcombo)==0:
+                form = dv+' ~ '
+            # one or more interactions
+            else:
+                form = dv+' ~ '
+                i = 0
+                for int_tup in intcombo:
+                    x1,x2 = int_tup
+                    colsusedint.append(x1)
+                    colsusedint.append(x2)
+                    if i == 0:
+                        form += x1+'*'+x2
+                        i+=1
+                    else:
+                        form += ' + '+x1+'*'+x2
+                # append base formula with only interactions
+                formulas.append(form)
+            # store list of cols used in interaction terms
+            colsusedintset = set(colsusedint)
+    
+            # BEGIN ADDING SINGLES
+            # create a copy of singletons list
+            cols_wkg = cols.copy()
+    
+            # drop interactions terms from singletons list
+            for xi in colsusedintset:
+                cols_wkg.remove(xi)
+            #print(colsusedintset)
+            #print(cols_wkg)
+    
+            # generate list of all possible combos of singletons, from 1 to as many as there are
+            singles_combos = [list(combinations(cols_wkg, n)) for n in range(minnumsingle, maxnumsingle+1)]
+        
+            # iterate over combo set (ie 1 poss singleton, 2 poss singletons, ... etc)
+            for comboset in singles_combos:
+                # for each combo in the combo set
+                for combo in comboset:
+                    # generate formula
+                    form_wsingles = form
+                    for single in combo:
+                        if form_wsingles==dv+' ~ ':
+                            form_wsingles+=single
+                        else:
+                            form_wsingles+=' + '+single
+                    formulas.append(form_wsingles)
+    
+    print('\nNumber of formulas:', len(formulas))
+            
+    # AIC ITERATION
+    resdf_fh, num_top_models = AICscore_from_all_pos_2way_interactions(df, formulas, report=report_AIC, thresh=thresh_AIC, rand_eff=rand_eff_AIC)
+    
+    # report
+    print('\n')
+    for idx,row in resdf_fh[0:num_top_models].iterrows():
+        formula = row.Formula
+        print(formula)
+    print('\n')
+    for idx,row in resdf_fh[0:num_top_models].iterrows():
+        formula = row.Formula
+        model = smf.ols(formula, data=df)
+        results = model.fit()
+        print(results.summary())
+        plot_ols_coefficients(results)
+        plt.show();
+        # if 'species' in cols:
+        #     cols.remove('species')
+        # plot_resid(df, cols, results)
+    
+    
+
 
 
