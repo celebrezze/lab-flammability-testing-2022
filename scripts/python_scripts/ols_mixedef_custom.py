@@ -328,7 +328,8 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, report=0, thresh=2, ra
             scores.append(results.aic)
             formulas_return.append(formula)
         except Exception as e:
-                print("ERROR: Formula model error:", formula)
+            print("ERROR: Formula model error:", formula)
+            # pass
     
     # report best scores and formula
     # print(len(scores), len(formulas))

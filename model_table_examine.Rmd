@@ -1,0 +1,40 @@
+---
+title: "model_table_examiner"
+author: "Kristina Fauss"
+date: '2024-04-29'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(here)
+here = here::here
+```
+
+```{r}
+fh_mods = read.csv('/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables/mainFHmem.csv')
+fd_mods = read.csv('/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables/mainFDmem.csv')
+hx_mods = read.csv('/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables/mainHFmem.csv')
+tc_mods = read.csv('/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables/mainTEMPmem.csv')
+```
+
+```{r}
+fh_mods %>% 
+  filter(AIC < min(fh_mods$AIC) + 2)
+```
+
+```{r}
+fd_mods %>% 
+  filter(AIC < min(fd_mods$AIC) + 2)
+```
+
+```{r}
+hx_mods %>% 
+  filter(AIC < min(hx_mods$AIC) + 2)
+```
+```{r}
+tc_mods %>% 
+  filter(AIC < min(tc_mods$AIC) + 2)
+```
