@@ -128,25 +128,6 @@ def formula_all_2way_interactions(cols, report=1, y='fh'):
         print(form)
     return(form)
 
-def compare_predictors_mixedeff(dfog, cols, yvar='fh'):
-    pvals = []
-    coefs = []
-    # compile coefs and pvals for each X col
-    for col in cols:
-        res = mixedeff_check(dfog, col, yvar)
-        coef = res[0]
-        pval = res[1]
-        pvals.append(pval)
-        coefs.append(coef)
-    df = pd.DataFrame({
-        'cols':cols,
-        'pvals':pvals,
-        'coefs':coefs,
-    })
-    df['significant']=df.pvals<0.05
-    df = df.sort_values('pvals')
-    print(df)
-
 def mixedeff_check(df, col, yvar):
     '''
     Takes 1 predictor `X` and 1 outcome `y`. Performs OLS y = B0*X + B1. Prints model summary.
@@ -156,13 +137,34 @@ def mixedeff_check(df, col, yvar):
     results = model.fit(reml=False)
     Xcoef = results.params[1]
     pval = results.pvalues[1]
-    return([Xcoef, pval])
+    aic_mod = results.aic
+    return([Xcoef, pval, aic_mod])
 
+def compare_predictors_mixedeff(dfog, cols, yvar='fh'):
+    pvals = []
+    coefs = []
+    aics = []
+    # compile coefs and pvals for each X col
+    for col in cols:
+        res = mixedeff_check(dfog, col, yvar)
+        pvals.append(res[0])
+        coefs.append(res[1])
+        aics.append(res[2])
+    df = pd.DataFrame({
+        'cols':cols,
+        'aics':aics,
+        'pvals':pvals,
+        'coefs':coefs
+    })
+    df['top_mod']=df.aics>=max(df.aics)-2
+    df = df.sort_values('aics', ascending=False).reset_index(drop=True)
+    print(df)
 
-def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, probs=[], printsumm=0):
-    
-    cols_that_were_sig = []
-    sig_interactions = []
+def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=2, printsumm=0):
+
+    aics = []
+    colpairs = []
+    int_terms = []
     
     # list of cols pairs
     cols2 = list(combinations(cols, 2))
@@ -172,33 +174,74 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=0.05, pro
         # compile formula
         int_term = col2[0]+'*'+col2[1]
         formi = y+' ~ '+int_term
-        #print(formi)
-        # check if its a problem
-        if formi in probs:
-            pass
             
         # run model
-        else:
-            if printsumm==1:
-                print(formi)
-            try:
-                model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
-                results = model.fit(reml=False)
-                if min(results.pvalues[3:-1]) < thresh:
-                    cols_that_were_sig.append(col2[0])
-                    cols_that_were_sig.append(col2[1])
-                    sig_interactions.append(int_term)
-                    if printsumm==1:
-                        print(results.summary())
-            except Exception as e:
-                print("ERROR: Formula model error:", formi)
-                
-    sigcols = set(cols_that_were_sig)
+        if printsumm==1:
+            print(formi)
+        try:
+            model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
+            results = model.fit(reml=False)
+            aics.append(results.aic)
+            colpairs.append(col2)
+            int_terms.append(int_term)
+        except Exception as e:
+            print("ERROR: Formula model error:", formi)
+
+    # get interaction terms to keep by AIC
+    df = pd.DataFrame({
+        'colpairs':colpairs,
+        'intterms':int_terms,
+        'aics':aics,
+    })
+    df['top_mod']=df.aics>=max(df.aics)-thresh
+    df = df.sort_values('aics', ascending=False).reset_index(drop=True)
+    df_top = df[df.top_mod==True]
+
+    # return and report
+    sigcols = set([j for i in df_top.colpairs for j in i])
+    sig_interactions = [interaction for interaction in df_top.intterms]
     print('\nColumns present in sig. interaction terms:', sigcols)
     print('\nTotal Num. Cols : Num. Sig. Int. Cols; ', len(cols), ':', len(sigcols))
     return sig_interactions
 
-
+# def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=2, probs=[], printsumm=0):
+    
+#     cols_that_were_sig = []
+#     sig_interactions = []
+    
+#     # list of cols pairs
+#     cols2 = list(combinations(cols, 2))
+    
+#     for col2 in cols2:
+        
+#         # compile formula
+#         int_term = col2[0]+'*'+col2[1]
+#         formi = y+' ~ '+int_term
+#         #print(formi)
+#         # check if its a problem
+#         if formi in probs:
+#             pass
+            
+#         # run model
+#         else:
+#             if printsumm==1:
+#                 print(formi)
+#             try:
+#                 model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
+#                 results = model.fit(reml=False)
+#                 if min(results.pvalues[3:-1]) < thresh:
+#                     cols_that_were_sig.append(col2[0])
+#                     cols_that_were_sig.append(col2[1])
+#                     sig_interactions.append(int_term)
+#                     if printsumm==1:
+#                         print(results.summary())
+#             except Exception as e:
+#                 print("ERROR: Formula model error:", formi)
+                
+#     sigcols = set(cols_that_were_sig)
+#     print('\nColumns present in sig. interaction terms:', sigcols)
+#     print('\nTotal Num. Cols : Num. Sig. Int. Cols; ', len(cols), ':', len(sigcols))
+#     return sig_interactions
 
 # GENERATE LISTS OF FORMULAS TO COMPARE
 
@@ -347,7 +390,7 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, report=0, thresh=2, ra
 # FULL ITERATOR PROGRAM
 def AIC_iterator(flam, cols_use, Y_VAR='fh',
                  minnumsingle=1, maxnumsingle=2, minnumint=0, maxnumint=1,
-                 thresh_int=0.05, probs_interaction_forms=[], printsummint=0, #compare_predictors_interaction_singletons
+                 thresh_int=2, printsummint=0, #compare_predictors_interaction_singletons
                  report_AIC=0, thresh_AIC=2, rand_eff_AIC="plant_id" #AICscore_from_all_pos_2way_interactions
                 ):
     '''
@@ -356,7 +399,7 @@ def AIC_iterator(flam, cols_use, Y_VAR='fh',
     
     # INTERACTIONS
     # significant singleton interactions: y = b + m1x1 + m2x2 + m3x1x2
-    sig_interactions = compare_predictors_interaction_singletons(flam, cols_use, y=Y_VAR, thresh=thresh_int, probs = probs_interaction_forms, printsumm=printsummint)
+    sig_interactions = compare_predictors_interaction_singletons(flam, cols_use, y=Y_VAR, thresh=thresh_int, printsumm=printsummint)
     # get list of tuples for interaction terms
     int_tuple_list = [tuple(x.split('*')) for x in sig_interactions]
     print('\nSignificant Interactions:')
