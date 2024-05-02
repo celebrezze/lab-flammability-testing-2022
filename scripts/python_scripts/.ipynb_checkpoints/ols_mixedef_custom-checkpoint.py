@@ -194,7 +194,7 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=2, prints
         'intterms':int_terms,
         'aics':aics,
     })
-    df['top_mod']=df.aics>=max(df.aics)-thresh
+    df['top_mod']=df.aics<=min(df.aics)+thresh
     df = df.sort_values('aics', ascending=False).reset_index(drop=True)
     df_top = df[df.top_mod==True]
 
@@ -342,9 +342,9 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, report=0, thresh=2, ra
             'AICscore':scores,
             'Formula':formulas_return
         }).sort_values(by='AICscore').reset_index(drop=True)
-    num_top_models = len(resdf[resdf.AICscore<resdf.AICscore.min()+thresh])
+    num_top_models = len(resdf[resdf.AICscore<=resdf.AICscore.min()+thresh])
     if report==1:
-        for i,row in resdf[resdf.AICscore<resdf.AICscore.min()+thresh].iterrows():
+        for i,row in resdf[resdf.AICscore<=resdf.AICscore.min()+thresh].iterrows():
             print(round(row.AICscore,2), ': ', row.Formula)
     return (resdf, num_top_models)
 
