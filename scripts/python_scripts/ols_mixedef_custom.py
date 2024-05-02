@@ -133,7 +133,8 @@ def mixedeff_check(df, col, yvar):
     Takes 1 predictor `X` and 1 outcome `y`. Performs OLS y = B0*X + B1. Prints model summary.
     '''
     form = yvar+'~'+col
-    model = smf.mixedlm(form, data=df, groups=df["plant_id"])
+    # model = smf.mixedlm(form, data=df, groups=df["plant_id"])
+    model = smf.mixedlm(form, data=df, groups=df["species"], re_formula='1', vc_formula={'species:plant_id': '0 + C(plant_id)'})
     results = model.fit(reml=False)
     Xcoef = results.params[1]
     pval = results.pvalues[1]
@@ -179,7 +180,7 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=2, prints
         if printsumm==1:
             print(formi)
         try:
-            model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
+            model = smf.mixedlm(formi, data=df, groups=df["species"], re_formula='1', vc_formula={'species:plant_id': '0 + C(plant_id)'})
             results = model.fit(reml=False)
             aics.append(results.aic)
             colpairs.append(col2)
@@ -203,45 +204,6 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=2, prints
     print('\nColumns present in sig. interaction terms:', sigcols)
     print('\nTotal Num. Cols : Num. Sig. Int. Cols; ', len(cols), ':', len(sigcols))
     return sig_interactions
-
-# def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=2, probs=[], printsumm=0):
-    
-#     cols_that_were_sig = []
-#     sig_interactions = []
-    
-#     # list of cols pairs
-#     cols2 = list(combinations(cols, 2))
-    
-#     for col2 in cols2:
-        
-#         # compile formula
-#         int_term = col2[0]+'*'+col2[1]
-#         formi = y+' ~ '+int_term
-#         #print(formi)
-#         # check if its a problem
-#         if formi in probs:
-#             pass
-            
-#         # run model
-#         else:
-#             if printsumm==1:
-#                 print(formi)
-#             try:
-#                 model = smf.mixedlm(formi, data=df, groups=df["plant_id"])
-#                 results = model.fit(reml=False)
-#                 if min(results.pvalues[3:-1]) < thresh:
-#                     cols_that_were_sig.append(col2[0])
-#                     cols_that_were_sig.append(col2[1])
-#                     sig_interactions.append(int_term)
-#                     if printsumm==1:
-#                         print(results.summary())
-#             except Exception as e:
-#                 print("ERROR: Formula model error:", formi)
-                
-#     sigcols = set(cols_that_were_sig)
-#     print('\nColumns present in sig. interaction terms:', sigcols)
-#     print('\nTotal Num. Cols : Num. Sig. Int. Cols; ', len(cols), ':', len(sigcols))
-#     return sig_interactions
 
 # GENERATE LISTS OF FORMULAS TO COMPARE
 
@@ -365,7 +327,7 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, report=0, thresh=2, ra
             print(formula)
         try:
             # get model & fit
-            model = smf.mixedlm(formula, data=df, groups=df[rand_eff])
+            model = smf.mixedlm(formula, data=df, groups=df["species"], re_formula='1', vc_formula={'species:plant_id': '0 + C(plant_id)'})
             results = model.fit(reml=False)
             # store score and formula
             scores.append(results.aic)
@@ -483,7 +445,7 @@ def AIC_iterator(flam, cols_use, Y_VAR='fh',
     print('\n')
     for idx,row in resdf_fh[0:num_top_models].iterrows():
         formula = row.Formula
-        model = smf.mixedlm(formula, data=df, groups=df[rand_eff_AIC])
+        model = smf.mixedlm(formula, data=df, groups=df["species"], re_formula='1', vc_formula={'species:plant_id': '0 + C(plant_id)'})
         results = model.fit(reml=False)
         print(results.summary())
         plot_ols_coefficients(results)
