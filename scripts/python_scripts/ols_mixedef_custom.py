@@ -134,7 +134,7 @@ def mixedeff_check(df, col, yvar):
     '''
     form = yvar+'~'+col
     # model = smf.mixedlm(form, data=df, groups=df["plant_id"])
-    model = smf.mixedlm(form, data=df, groups=df["species"], re_formula='1', vc_formula={'species:plant_id': '0 + C(plant_id)'})
+    model = smf.mixedlm(form, data=df, groups=df["species"], re_formula='1', vc_formula={'C(species):C(plant_id)': '0 + C(plant_id)'})
     results = model.fit(reml=False)
     Xcoef = results.params[1]
     pval = results.pvalues[1]
@@ -142,6 +142,7 @@ def mixedeff_check(df, col, yvar):
     return([Xcoef, pval, aic_mod])
 
 def compare_predictors_mixedeff(dfog, cols, yvar='fh'):
+    '''tests each col independently then reports all together in 1 table'''
     pvals = []
     coefs = []
     aics = []
@@ -180,7 +181,7 @@ def compare_predictors_interaction_singletons(df, cols, y='fh', thresh=2, prints
         if printsumm==1:
             print(formi)
         try:
-            model = smf.mixedlm(formi, data=df, groups=df["species"], re_formula='1', vc_formula={'species:plant_id': '0 + C(plant_id)'})
+            model = smf.mixedlm(formi, data=df, groups=df["species"], re_formula='1', vc_formula={'C(species):C(plant_id)': '0 + C(plant_id)'})
             results = model.fit(reml=False)
             aics.append(results.aic)
             colpairs.append(col2)
@@ -327,7 +328,7 @@ def AICscore_from_all_pos_2way_interactions(df, formulas, report=0, thresh=2, ra
             print(formula)
         try:
             # get model & fit
-            model = smf.mixedlm(formula, data=df, groups=df["species"], re_formula='1', vc_formula={'species:plant_id': '0 + C(plant_id)'})
+            model = smf.mixedlm(formula, data=df, groups=df["species"], re_formula='1', vc_formula={'C(species):C(plant_id)': '0 + C(plant_id)'})
             results = model.fit(reml=False)
             # store score and formula
             scores.append(results.aic)
@@ -445,7 +446,7 @@ def AIC_iterator(flam, cols_use, Y_VAR='fh',
     print('\n')
     for idx,row in resdf_fh[0:num_top_models].iterrows():
         formula = row.Formula
-        model = smf.mixedlm(formula, data=df, groups=df["species"], re_formula='1', vc_formula={'species:plant_id': '0 + C(plant_id)'})
+        model = smf.mixedlm(formula, data=df, groups=df["species"], re_formula='1', vc_formula={'C(species):C(plant_id)': '0 + C(plant_id)'})
         results = model.fit(reml=False)
         print(results.summary())
         plot_ols_coefficients(results)
