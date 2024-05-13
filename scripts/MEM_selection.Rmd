@@ -19,8 +19,8 @@ source(here('scripts', 'mem.selection.function.R')) #this is where all functions
 ```
 
 ```{r}
-expfolder = '/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables'
-write.csv(main.ig.glmm.df, "/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables/mainIGmem", row.names=FALSE)
+#expfolder = '/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables'
+#write.csv(main.ig.glmm.df, "/Users/kristinafauss/BackupToBox/Git/lab-flammability-testing-2022/model_summary_tables/mainIGmem", row.names=FALSE)
 ```
 
 # Data Structure
@@ -931,14 +931,20 @@ summary(ig.top.glmm)
 # Top Models: Coefficients Table
 After selecting the top models from the various parsimonious models selected above, we use tab_model on restricted maximum likelihood linear mixed effects models to make note of the predictors' beta coefficients and their significance
 ```{r}
-# WITH REML = TRUE
-fh.top.mem <- lmer(fh ~ sample_wt*lfm + branching + mpa + start_temp + (1|species/plant_id), REML = T, data = mem.df)
-fd.top.mem <- lmer(fd ~ sample_wt*dmc + leaf_mass_ratio + (1|species/plant_id), REML = T, data = mem.df)
-temp.top.mem <- lmer(temp_change ~ branch_volume*start_temp + branching + mpa + sample_wt + LMA + stem_sav + (1|species/plant_id), REML = T, data = mem.df)
-hf.top.mem <- lmer(heat_flux_change ~ sample_wt*leaf_mass_ratio + start_temp + (1|species/plant_id), REML = T, data = mem.df)
+# WITH REML = TRUE, to report coefficients
+# top models identified in model selection for each flammability metric
+fh.top.mem <- lmer(fh ~ sample_wt + mpa + branching + start_temp + stem_sav + (1|species/plant_id), REML = T, data = mem.df)
+fd.top.mem <- lmer(fd ~ sample_wt*lfm + leaf_mass_ratio + dmc + branch_volume + (1|species/plant_id), REML = T, data = mem.df)
+temp.top.mem <- lmer(temp_change ~ start_temp + sample_wt + branching + lfm + (1|species/plant_id), REML = T, data = mem.df)
+hf.top.mem <- lmer(heat_flux_change ~ sample_wt*start_temp + LMA + (1|species/plant_id), REML = T, data = mem.df)
 
-coef.top.mem.list <- list(fh.top.mem, fd.top.mem, temp.top.mem, hf.top.mem)
+coef.top.mem.list <- list(fh.top.mem, fd.top.mem, temp.top.mem, hf.top.mem) # list of models
 
+for(i in 1:length(coef.top.mem.list)){
+  print(multicollinearity(coef.top.mem.list[[i]]))
+} # double check multicollinearity
+
+# sjPlot tab_model to make a summary table of the top mixed effects models
 tab_model(coef.top.mem.list,
           show.reflvl = TRUE, 
           digits = 3, 
@@ -1012,32 +1018,34 @@ coef.confint.overlap(top.hf.mem.df)
 ## MEM Figure
 This chunk code visualizes the top-performing MEM models for each flam. metric tested. Setting up the dataframe from the above coefficients table is admittedly clunky and involves manually inputting the coefficients and signficance, but the output looks pretty good.
 ```{r}
-pred_vec <- c('branch_volume', 'branch_volume:start_temp', 'branching', 'dmc', 'leaf_mass_ratio', 'lfm', 'LMA', 'mpa', 'sample_wt', 'sample_wt:dmc', 'sample_wt:leaf_mass_ratio', 'sample_wt:lfm', 'start_temp', 'stem_sav')
+# selected predictors, as they are coded
+pred_vec <- c('branch_volume', 'branching', 'dmc', 'leaf_mass_ratio', 'lfm', 'LMA', 'mpa', 'sample_wt', 'sample_wt:lfm', 'sample_wt:start_temp', 'start_temp', 'stem_sav')
 predictors <- rep(pred_vec, 4)
 flam_metrics <- c(rep('Flame\nHeight', length(pred_vec)),
                   rep('Flame\nDuration', length(pred_vec)),
                   rep('Temperature\nChange', length(pred_vec)),
                   rep('Heat Flux\nChange', length(pred_vec)))
-coef <- c(NA, NA, 0.218, NA, NA, 0.057, NA, 0.119, 0.640,
-          NA, NA, 0.398, 0.101, NA, # fh
-          NA, NA, NA, 0.368, 0.182, NA, NA, NA, 0.404,
-          0.297, NA, NA, NA, NA, # fd
-          0.063, -0.326, 0.219, NA, NA, NA, -0.288,
-          0.124, 0.244, NA, NA, NA, -0.525, -0.209, # temp
-          NA, NA, NA, NA, -0.052, NA, NA, NA,
-          0.642, NA, -0.315, NA, 0.254, NA) # hf
-p.val <- c(NA, NA, '***', NA, NA, '', NA, '', '***',
-          NA, NA, '***', '', NA, # fh
-          NA, NA, NA, '**', '', NA, NA, NA, '***',
-          '**', NA, NA, NA, NA, # fd
-          '', '***', '***', NA, NA, NA, '*',
-          '', '*', NA, NA, NA, '***', '*', # temp
-          NA, NA, NA, NA, '', NA, NA, NA,
-          '***', NA, '***', NA, '***', NA) # hf
-woo <- data.frame(predictors, flam_metrics, coef, p.val) %>% 
-  mutate(predictors = case_when(
+# coefficients, in the order of the above pred_vec
+coef <- c(NA, 0.174, NA, NA, NA, NA, 0.109,
+          0.475, NA, NA, 0.137, -0.319, # fh
+          -0.144, NA, 0.377, 0.186, -0.168, NA, NA,
+          0.489, -0.393, NA, NA, NA, # fd
+          NA, 0.193, NA, NA, -0.167, NA, NA,
+          0.192, NA, NA, -0.511, NA, # temp
+          NA, NA, NA, NA, NA, -0.014, NA,
+          0.657, NA, -0.228, 0.241, NA) # hf
+# p values, in the order of the coef and pred_vec
+p.val <- c(NA, '**', NA, NA, NA, NA, NA,
+          '***', NA, NA, NA, '*', # fh
+          NA, NA, '*', NA, NA, NA, NA,
+          '***', '*', NA, NA, NA, # fd
+          NA, '*', NA, NA, NA, NA, NA,
+          '*', NA, NA, '***', NA, # temp
+          NA, NA, NA, NA, NA, NA, NA,
+          '***', NA, '**', '**', NA) # hf
+mem.visualization.df <- data.frame(predictors, flam_metrics, coef, p.val) %>% 
+  mutate(predictors = case_when( # naming the pred_vec for visualization
     predictors == 'branch_volume' ~ 'Branch Volume',
-    predictors == 'branch_volume:start_temp' ~ 'Starting Temp x\n Branch Volume',
     predictors == 'lfm' ~ 'Live Fuel\n Moisture (LFM)',
     predictors == 'leaf_mass_ratio' ~ 'Leaf Mass\n Ratio (LMR)',
     predictors == 'sample_wt' ~ 'Sample Mass',
@@ -1047,22 +1055,22 @@ woo <- data.frame(predictors, flam_metrics, coef, p.val) %>%
     predictors == 'stem_sav' ~ 'Stem Surface\n Area:Volume',
     predictors == 'start_temp' ~ 'Starting\n Temperature',
     predictors == 'dmc' ~ 'Dry Matter\n Content (DMC)',
-    predictors == 'sample_wt:dmc' ~ 'DMC x\nSample Mass',
-    predictors == 'sample_wt:leaf_mass_ratio' ~ 'LMR x\nSample Mass',
+    predictors == 'sample_wt:start_temp' ~ 'Start Temp. x\nSample Mass',
     predictors == 'sample_wt:lfm' ~ 'LFM x\nSample Mass'
   )) %>% 
   mutate(predictors = as.factor(predictors)) %>% 
-  mutate(predictors = fct_relevel(predictors, c('Sample Mass', 'Starting\n Temperature', 'Branching', 'Leaf Mass\n Ratio (LMR)', 'Water Potential', 'Live Fuel\n Moisture (LFM)', 'Dry Matter\n Content (DMC)', 'Leaf Mass\n per Area', 'Stem Surface\n Area:Volume', 'Branch Volume', 'DMC x\nSample Mass', 'LMR x\nSample Mass', 'LFM x\nSample Mass', 'Starting Temp x\n Branch Volume'))) %>% 
+  mutate(predictors = fct_relevel(predictors, c('Sample Mass', 'Starting\n Temperature', 'Branching', 'Leaf Mass\n Ratio (LMR)', 'Water Potential', 'Live Fuel\n Moisture (LFM)', 'Dry Matter\n Content (DMC)', 'Leaf Mass\n per Area', 'Stem Surface\n Area:Volume', 'Branch Volume', 'DMC x\nSample Mass', 'LMR x\nSample Mass', 'LFM x\nSample Mass', 'Starting Temp x\n Branch Volume'))) %>%  # re-ordering
   mutate(flam_metrics = as.factor(flam_metrics)) %>% 
   mutate(flam_metrics = fct_relevel(flam_metrics, c('Flame\nDuration', 'Heat Flux\nChange', 'Temperature\nChange', 'Flame\nHeight'))) 
 
-woo %>% 
+# visualization
+mem.visualization.dfd %>% 
 ggplot(aes(x = predictors, y = flam_metrics, fill = coef)) +
   geom_tile(aes(x = predictors, y = flam_metrics, fill = coef)) +
   geom_text(aes(x = predictors, y = flam_metrics, label = p.val), color = 'white', fontface = 'bold', size = 8) +
   labs(x = 'Predictors', y = 'Flam. Metrics',
        fill = '\u03b2 Coefficient') +
-  scale_fill_gradient2(low = 'darkred', mid = "gray80", high = 'darkblue', midpoint = 0, na.value = 'white', limits = c(-0.65, 0.65), breaks = c(-0.6, -0.3, 0, 0.3, 0.6)) +
+  scale_fill_gradient2(low = 'darkred', mid = "gray80", high = 'darkblue', midpoint = 0, na.value = 'white', limits = c(-0.66, 0.66), breaks = c(-0.6, -0.3, 0, 0.3, 0.6)) +
   geom_vline(xintercept = 10.5, linewidth = 0.4, color = 'gray35', linetype = 'dashed') +
   geom_hline(yintercept = c(0.5, 1.5, 2.5, 3.5, 4.5), linewidth = 0.75, color = 'gray35') +
   geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5), linewidth = 0.2, color = 'gray60') +
