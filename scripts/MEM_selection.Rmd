@@ -1026,7 +1026,7 @@ flam_metrics <- c(rep('Flame\nHeight', length(pred_vec)),
                   rep('Temperature\nChange', length(pred_vec)),
                   rep('Heat Flux\nChange', length(pred_vec)))
 # coefficients, in the order of the above pred_vec
-coef <- c(NA, 0.174, NA, NA, NA, NA, 0.109,
+coef <- c(NA, 0.174, NA, NA, NA, NA, -0.109,
           0.475, NA, NA, 0.137, -0.319, # fh
           -0.144, NA, 0.377, 0.186, -0.168, NA, NA,
           0.489, -0.393, NA, NA, NA, # fd
@@ -1064,7 +1064,7 @@ mem.visualization.df <- data.frame(predictors, flam_metrics, coef, p.val) %>%
   mutate(flam_metrics = fct_relevel(flam_metrics, c('Flame\nDuration', 'Heat Flux\nChange', 'Temperature\nChange', 'Flame\nHeight'))) 
 
 # visualization
-mem.visualization.dfd %>% 
+mem.visualization.df %>% 
 ggplot(aes(x = predictors, y = flam_metrics, fill = coef)) +
   geom_tile(aes(x = predictors, y = flam_metrics, fill = coef)) +
   geom_text(aes(x = predictors, y = flam_metrics, label = p.val), color = 'white', fontface = 'bold', size = 8) +
