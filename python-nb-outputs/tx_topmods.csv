@@ -1,0 +1,11 @@
+,index,Formula,AIC,BIC,VIF
+0,7,temp_change ~ sample_wt*start_temp + lfm + branching,336.75,364.31,1.48
+1,2,temp_change ~ sample_wt*start_temp + branching + mpa + stem_sav,337.44,368.06,1.58
+2,5,temp_change ~ sample_wt*start_temp + LMA + branching + stem_sav,337.62,368.25,2.07
+3,3,temp_change ~ sample_wt*start_temp + lfm + branching + mpa,337.87,368.5,1.55
+4,0,temp_change ~ sample_wt*start_temp + branching + stem_sav,338.11,365.68,1.57
+5,6,temp_change ~ sample_wt*start_temp + LMA + branching + branch_volume + stem_sav,338.2,371.89,3.35
+6,1,temp_change ~ sample_wt*start_temp + branching + branch_volume + stem_sav,338.24,368.87,3.19
+7,4,temp_change ~ sample_wt*start_temp + lfm + leaf_mass_ratio + branching,338.27,368.89,1.76
+8,9,temp_change ~ sample_wt*start_temp + lfm + branching + dmc,338.54,369.17,2.14
+9,10,temp_change ~ sample_wt*start_temp + branching + mpa + branch_volume + stem_sav,338.6,372.29,3.28

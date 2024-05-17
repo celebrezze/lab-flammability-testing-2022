@@ -437,14 +437,18 @@ def AIC_iterator(flam, cols_use, Y_VAR='fh',
             
     # AIC ITERATION
     resdf_fh, num_top_models = AICscore_from_all_pos_2way_interactions(df, formulas, report=report_AIC, thresh=thresh_AIC, rand_eff=rand_eff_AIC)
+
+    top_resdf = resdf_fh[resdf_fh.AICscore<= resdf_fh.AICscore.min()+thresh_AIC]
     
     # report
     print('\n')
-    for idx,row in resdf_fh[0:num_top_models].iterrows():
+    #for idx,row in resdf_fh[0:num_top_models].iterrows():
+    for idx,row in top_resdf.iterrows():
         formula = row.Formula
         print(formula)
     print('\n')
-    for idx,row in resdf_fh[0:num_top_models].iterrows():
+    #for idx,row in resdf_fh[0:num_top_models].iterrows():
+    for idx,row in top_resdf.iterrows():
         formula = row.Formula
         model = smf.mixedlm(formula, data=df, groups=df["species"], re_formula='1', vc_formula={'C(species):C(plant_id)': '0 + C(plant_id)'})
         results = model.fit(reml=False)

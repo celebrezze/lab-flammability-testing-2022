@@ -1,0 +1,7 @@
+,index,Formula,AIC,BIC,VIF
+0,0,fd ~ sample_wt*dmc + leaf_mass_ratio,399.28,423.78,3.26
+1,1,fd ~ sample_wt*dmc,400.8,422.24,1.11
+2,7,fd ~ sample_wt*dmc + leaf_mass_ratio + branching,400.82,428.38,3.26
+3,4,fd ~ sample_wt*dmc + leaf_mass_ratio + stem_sav,401.09,428.65,3.91
+4,3,fd ~ sample_wt*dmc + leaf_mass_ratio + mpa,401.15,428.72,3.3
+5,6,fd ~ sample_wt*dmc + lfm + leaf_mass_ratio,401.17,428.73,3.29
