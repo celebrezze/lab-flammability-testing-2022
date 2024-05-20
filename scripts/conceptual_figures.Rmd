@@ -233,18 +233,18 @@ summary(desireflam.lm)
 es.vs.flam.zones <- ggplot(data=flam_scores) +
   geom_point(aes(x=es.score, y=flam.score, color=species), size=12, alpha=0.75) + 
   geom_text(vjust=0, hjust=-0.15, aes(x=labx_updated, y=laby_updated, label=species_updated), fontface = 'bold.italic', size = 12) +
-  annotate(geom = 'rect', xmin = 1, xmax = 4, ymin = -2, ymax = -1,
-           alpha = 0.2, fill = '#00CC99') +
-  annotate('text', x = 1.1, y = -1.5, label = 'Zone 1', size = 9,
-           fontface = 'bold', color = '#005641', angle = 90) +
-  annotate(geom = 'rect', xmin = 1, xmax = 4, ymin = -1, ymax = 1,
-           alpha = 0.2, fill = '#FFEE88') +
-  annotate('text', x = 1.1, y = 0, label = 'Zone 2', size = 9,
-           fontface = 'bold', color = '#AE9400', angle = 90) +
-  annotate(geom = 'rect', xmin = 1, xmax = 4, ymin = 1, ymax = 2,
-           alpha = 0.2, fill = '#D7263D') +
-  annotate('text', x = 1.1, y = 1.5, label = 'Avoid', size = 9,
-           fontface = 'bold', color = '#750010', angle = 90) +
+  #annotate(geom = 'rect', xmin = 1, xmax = 4, ymin = -2, ymax = -1,
+  #         alpha = 0.2, fill = '#00CC99') +
+  #annotate('text', x = 1.1, y = -1.5, label = 'Zone 1', size = 9,
+  #         fontface = 'bold', color = '#005641', angle = 90) +
+  #annotate(geom = 'rect', xmin = 1, xmax = 4, ymin = -1, ymax = 1,
+  #         alpha = 0.2, fill = '#FFEE88') +
+  #annotate('text', x = 1.1, y = 0, label = 'Zone 2', size = 9,
+   #        fontface = 'bold', color = '#AE9400', angle = 90) +
+  #annotate(geom = 'rect', xmin = 1, xmax = 4, ymin = 1, ymax = 2,
+  #         alpha = 0.2, fill = '#D7263D') +
+  #annotate('text', x = 1.1, y = 1.5, label = 'Avoid', size = 9,
+  #         fontface = 'bold', color = '#750010', angle = 90) +
   labs(x = 'Desirable Traits Score', y = 'Flammability Score') +
   scale_color_manual(values = c('#00468BB2', '#ED0000B2', '#42B540B2', '#0099B4B2', '#925E9FB2', '#AD002AB2', '#ADB6B6B2', '#1B1919B2')) +
   theme_bw() +
