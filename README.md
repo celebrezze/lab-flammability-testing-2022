@@ -2,14 +2,14 @@
 
 ## A GitHub Repository for: 
 
-## Landscaping in fire-prone neighborhoods: laboratory flammability testing in response to community survey responses
+## A Community Led Approach to Plant Flammability Testing for Landscaping Defensible Space
 
 ## Kristina Fauss, Joe Celebrezze, Indra Boving, Robert Fitch, Rachel Dye, and Max Moritz
 
 --------------------------------
 
 ## Introductory Statement
-This repository is meant for the storage and sharing of data, scripts, figures, and mixed effects model result tables related to the paper titled *Landscaping in fire-prone neighborhoods: laboratory flammability testing in response to community survey responses* by Kristina Fauss, Joe Celebrezze, Indra Boving, Robert Fitch, Rachel Dye, and Max Moritz which showcases a partipatory research approach to laboratory flammability testing and recommends fire-safe plants for landscaping in the wildland-urban-interface (WUI) in Santa Barbara county and surrounding regions. Otherwise, the analyses and data wrangling presented here could be used as a framework for future studies investigating similar questions such as the ongoing work in the Moritz Fire Lab at UCSB.
+This repository is meant for the storage and sharing of data, scripts, figures, and mixed effects model result tables related to the paper titled *A Community Led Approach to Plant Flammability Testing for Landscaping Defensible Space* by Kristina Fauss, Joe Celebrezze, Indra Boving, Robert Fitch, Rachel Dye, and Max Moritz which showcases a participatory research approach to laboratory flammability testing and recommends fire-safe plants for landscaping in the wildland-urban-interface (WUI) in Santa Barbara county and surrounding regions. Otherwise, the analyses and data wrangling presented here could be used as a framework for future studies investigating similar questions such as the ongoing work in the Moritz Fire Lab at UCSB.
 
 --------------------------------
 
@@ -18,6 +18,8 @@ This repository is meant for the storage and sharing of data, scripts, figures, 
 [Breakdown of Folders](https://github.com/celebrezze/flam-methods-comparison#breakdown-of-folders)
 
 [- Raw Data](https://github.com/celebrezze/flam-methods-comparison#raw-data)
+
+[- GIS](https://github.com/celebrezze/flam-methods-comparison#raw-data)
 
 [- Processed Data](https://github.com/celebrezze/flam-methods-comparison#processed-data)
 
@@ -36,7 +38,7 @@ This repository is meant for the storage and sharing of data, scripts, figures, 
 ## Breakdown of Folders
 
 ### Data:
-The **data** folder consists of two subfolders, **raw-data** and **processed-data**. For more information regarding specific column names, see metadata
+The **data** folder consists of three subfolders - **raw-data**, **processed-data**, and **GIS**. For more information regarding specific column names, see metadata
 
 #### Raw Data:
 The **raw-data** folder consists of four subfolders:
@@ -72,41 +74,52 @@ The **raw-data** folder consists of four subfolders:
   **thermocouplers**: raw time series data for temperature and heat flux from the datalogger; labelled with date (YYYYMMDD)
   
 #### Processed Data:
-The **processed-data** folder consists of datasets manipulated/wrangled at some stage from the **raw-data**, primarily in data wrangling scripts. 
+The **processed-data** folder consists of datasets manipulated/wrangled at some stage from the **raw-data**, primarily in data wrangling scripts (*flamm_data_wrangling.Rmd* and *plant_traits_data_wrangling.Rmd*). See the data wrangling scripts for more information on how we cleaned raw data and produced the necessary processed dataframes.
 
-### Processed Data:
-The **processed-data** folder consists of datasets manipulated/wrangled at some stage from the *raw-data*. This folder primarily includes datasets of different iterations that include data in which both methods were used simultaneously. See the metadata for more information. Otherwise, see *1.data_wrangling_methods.Rmd* (for the combined datasets as described in the metadata or *data_wrangling_SEKI.Rmd* (in *extra-analyses*; for *seki_flam_data_all.csv*) for details on data wrangling.
+### GIS:
+The **GIS** folder includes various geospatial data including rasters and geodatabases which identify the extent of wildland-urban-interface in the study area (Santa Barbara county) to report how important it is to conduct community-focused flammability testing in Santa Barbara county .
 
 ### Scripts:
-The **scripts** folder includes scripts for all of the code we used to wrangle data, complete analyses, and design tables and figures for the main body of the paper, the supplementary index, and for exploratory analyses (which are primarily located in the *extra-analyses* folder inside of the **scripts** folder). The scripts are numbered in a logical order which follows the order presented in the paper. Further details regarding each of the 6 main scripts follow:
+The **scripts** folder includes scripts for all of the code we used to wrangle data, complete analyses, and design tables and figures for the main body of the paper, the supplementary index, and for exploratory analyses. The scripts are numbered in a logical order which follows the order presented in the paper. Further details regarding each of the 9 main scripts follow:
 
-  *1.data_wrangling_methods.Rmd*: this takes the datasets from the *raw-data* folder and cleans them up so that they could be combined into one main dataset for further analyses. It removes species with less than 6 ignitions for either of the methods (leaving *Adenostoma fasciculatum*, *Ceanothus megacarpus*, *Arctostaphylos patula*, and *Ceanothus cordulatus*), removes rows with NA values in certain variables, and moves any instances of manual ignitions (i.e., after 7 minutes elapsed, we manually ignited the samples by lifting them into the propane-fueled pilot flame) into a specific dataset, otherwise removing them from the bulk of datasets.
+  *1.1_flamm_data_wrangling.Rmd*: this takes the datasets from the **flamm** subfolder of the **raw-data** folder and cleans them up so that they could be combined into one main dataset for further analyses. 
   
-  *2.literature_review.Rmd*: this involves all analyses and figures relating to the literature review. This includes the map labelled Figure 2a in the paper. IMPORTANT NOTE: For this map, we used global ignitions data readily available from the Global Fire Atlas through ORNL DAAC, Distributed Active Archive Center for Biogeochemical Dynamics (https://daac.ornl.gov/cgi-bin/dsviewer.pl?ds_id=1642). This data was **not** stored in our GitHub due to the large file size. Due to this, data must be locally requested from the website and then proper urls must be manually inputted into the code by whoever may be running the script for it to run properly.
+  *1.2_plant_traits_data_wrangling.Rmd*: this takes the datasets from the **plant-traits** subfolder of the **raw-data** folder, cleans them up, combines them for futher analyses **and** sets up clean dataframes which combine flammability measurements with plant traits which were used in the bulk of other analyses.
   
-  *3.1.water_content_vs_flam.Rmd*: this involves code necessary for figures that compare water content (or dry weight) to flammability metrics and accompanying mixed effects model selections and statistical tests. It includes a wide variety of iterations to look at the data including iterations not included in the paper or supplementary materials.
+  *2.1_exploratory_analyses.Rmd*: this involves misc. exploratory analyses which we used to inform our expectations for future analyses, understand patterns in our data, and identify cases where further data cleaning was necessary.
   
-  *3.2.mixed_effects_model_selections.Rmd*: this involves the primary mixed effects model selection discussed in the paper and accompanying mixed effects model summary tables.
+  *2.2_sample_weight_exploration.Rmd*: this involves a more pointed investigation into the importance of sample weight (or sample mass, dry weight, and wet weight) in driving relationships between plant traits and flammability and compares different ways to account for differences in sample weight.
   
-  *4.interspecific_differences.Rmd*: this focuses on the section of the supplementary index concerned with interspecific differences and involves many iterations of similar analyses (a lot of which were not utilized); otherwise, it contains statistical tests, visualizations and summary tables that relate to interspecific differences.
+  *3_survey.Rmd*: this involves all analyses and figures made associated with the community survey data.
   
-  *5.PCA.Rmd*: this involves all code necessary for the principal component analyses included in the paper.
+  *4_interspecific_differences.Rmd*: this focuses on analyses and figures concerned with interspecific differences in flammability metrics and plant traits; more specifically, it contains statistical tests, visualizations and summary tables that relate to interspecific differences.
   
-  *extra-analyses*: as previously alluded to, any exploratory analyses or scripts which were improved upon or elaborated on by the main 6 scripts described above were placed in the *extra-analyses* folder. This folder includes analyses not mentioned above such as variance decomposition, classification and regression trees, segmented regressions, using the flammability index developed in Essaghi et. al. 2017, and an investigation into manual ignitions (mostly for *Ceanothus cordulataus*). Importantly, it also contains the *data_wrangling_SEKI.Rmd* file dedicated to wrangling the *SEKI.flammability.csv* into a more usable format in *seki_flam_data_all.csv*.
+  *5.1_MEM_selection.Rmd*: this involves all code necessary for the linear mixed effects model selection relied upon in the manuscript.
   
+  *5.2_model_table_examine.Rmd*: this examines model selection tables to select top-performing models.
+  
+  *6_conceptual_figures.Rmd*: this involves relating flammability results to the results of the community survey. More specifically, it includes code necessary to produce flammability triangle plots which investigate interspecific differences in combustibility, consumability, and sustainability scores and it includes scatterplots which compare species 'desirability scores' to flammability scores.
+  
+  **extra-analyses**: other analyses which were either not relied upon in the final product or only minorly relied upon, typically to inform other analyses, were placed in this folder
+  
+  **python_scripts**: linear mixed model selections were scrutinized throughout the development of this project, and model selections were investigated using both R/RStudio and Python; the scripts in this folder are code involved in running MEM selections in python
+
+### Python Notebook Outputs
+The **python-nb-outputs** folder involves outputs from the MEM selections run on Python.
+
+### Model Summary Tables
+The **model_summary_tables** folder involves summary tables from MEM selections run on either Python or R.
+
 ### Figures:
-The **figures** folder includes all figures included in the main text of the paper and the supplementary index, as well as figures we did not end up presenting (mostly placed in the *extra-figures* folder). All main and supplementary figures were labelled appropriately with FigX. or FigSX. preceding the description of the figure. Note that *Fig1.methods.images.png* is not made in any script, but instead consists of two pictures taken by Indra Boving and Joe Celebrezze.
-
-### Mixed Effects Model Selection Tables:
-These are placed in the **mem-model-selection** folder and informed our conclusions regarding this analysis.
+The **figures** folder includes all figures included in the main text of the paper and the supplementary index, as well as figures we did not end up presenting (mostly placed in the *extra-figures* folder).
 
 ## Metadata:
 This is located in *METADATA.Rmd* and *METADATA.html* (made from knitting *METADATA.Rmd*).
 
 ## Contact Information
 
-Joe Celebrezze*: celebrezze@ucsb.edu
+Kristina Fauss*: kfauss@ucsb.edu
 
-Indra Boving: bovingi@ucsb.edu
+Joe Celebrezze: celebrezze@ucsb.edu
 
 **correspondence*
